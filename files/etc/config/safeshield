@@ -1,0 +1,2 @@
+config safeshield 'config'
+	option enabled '0'
