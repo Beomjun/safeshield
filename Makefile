@@ -19,10 +19,29 @@ define Package/safeshield
   TITLE:=SafeShield Service
   URL:=https://github.com/Beomjun/safeshield
   DEPENDS:=+curl +jshn
+  PKGARCH:=all
 endef
 
 define Package/safeshield/description
 SafeShield is a Lightweight, DNS-based protection for OpenWrt — block ads and phishing sites.
+endef
+
+define Package/safeshield/conffiles
+/etc/config/safeshield
+endef
+
+define Package/safeshield/install
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./files/etc/init.d/safeshield $(1)/etc/init.d/safeshield
+
+	$(INSTALL_DIR) $(1)/etc/config
+	$(INSTALL_CONF) ./files/etc/config/safeshield $(1)/etc/config/safeshield
+endef
+
+define Build/Compile
+endef
+
+define Build/Configure
 endef
 
 $(eval $(call BuildPackage,safeshield))
