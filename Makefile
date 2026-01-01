@@ -14,12 +14,12 @@ PKG_RELEASE:=1
 include $(INCLUDE_DIR)/package.mk
 
 define Package/safeshield
-  SECTION:=net
-  CATEGORY:=Network
-  TITLE:=SafeShield Service
-  URL:=https://github.com/Beomjun/safeshield
-  DEPENDS:=+curl +jshn
-  PKGARCH:=all
+	SECTION:=net
+	CATEGORY:=Network
+	TITLE:=SafeShield Service
+	URL:=https://github.com/Beomjun/safeshield
+	DEPENDS:=+curl +jshn
+	PKGARCH:=all
 endef
 
 define Package/safeshield/description
