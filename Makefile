@@ -36,6 +36,11 @@ define Package/safeshield/install
 
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/safeshield $(1)/etc/config/safeshield
+
+	$(INSTALL_DIR) $(1)/usr/lib/safeshield
+	$(INSTALL_DATA) ./files/safeshield.log.sh $(1)/usr/lib/safeshield/log.sh
+	$(INSTALL_DATA) ./files/safeshield.status.sh $(1)/usr/lib/safeshield/status.sh
+	$(INSTALL_DATA) ./files/safeshield.utils.sh  $(1)/usr/lib/safeshield/utils.sh
 endef
 
 define Build/Compile

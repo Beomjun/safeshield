@@ -1,1 +1,66 @@
 #!/bin/sh /etc/rc.common
+
+START=20
+STOP=1
+USE_PROCD=1
+LC_ALL=C
+
+if type extra_command 1>/dev/null 2>&1; then
+    extra_command 'allow' 'Allows domain in current block-list and config'
+    extra_command 'check' 'Checks if specified domain is found in current block-list'
+    extra_command 'check_tld' 'Checks if any TLDs are found in current block-list'
+    extra_command 'check_leading_dot' 'Checks if leading-dot domains are found in current block-list'
+    extra_command 'check_lists' 'Checks if specified domain is found in enabled block-lists'
+    extra_command 'delete_cache' 'Delete all cached files'
+    extra_command 'force_download' 'Force-downloads all enabled block-list'
+    extra_command 'show_blocklist' 'List currently blocked domains'
+    extra_command 'sizes' 'Displays the file-sizes of configured block-lists'
+    extra_command 'version' 'Show version information'
+fi
+
+readonly PKG_NAME='safeshield'
+readonly PKG_VERSION='0.1.0'
+readonly LOCK_FD=309
+readonly RUNNING_STATUS_LOCK="/var/lock/${PKG_NAME}.lock"
+readonly RUNNING_STATUS_FILE="/dev/shm/${PKG_NAME}.status.json"
+
+readonly _DOT_='.'
+readonly __DOT__='[w]'
+readonly _OK_='\033[0;32m\xe2\x9c\x93\033[0m'
+readonly __OK__='\033[0;32m[\xe2\x9c\x93]\033[0m'
+readonly _FAIL_='\033[0;31m\xe2\x9c\x97\033[0m'
+readonly __FAIL__='\033[0;31m[\xe2\x9c\x97]\033[0m'
+readonly _WARN_='\033[0;33m\xe2\x9c\x94\033[0m'
+readonly __WARN__='\033[0;33m[\xe2\x9c\x94]\033[0m'
+readonly _ERROR_='\033[0;31m[ERROR]\033[0m'
+readonly _WARNING_='\033[0;33m[WARN]\033[0m'
+
+# shellcheck disable=SC1091
+. "${IPKG_INSTROOT}/lib/functions.sh"
+# shellcheck disable=SC1091
+. "${IPKG_INSTROOT}/lib/functions/network.sh"
+# shellcheck disable=SC1091
+. "${IPKG_INSTROOT}/usr/share/libubox/jshn.sh"
+# shellcheck disable=SC1091
+. "${IPKG_INSTROOT}/usr/lib/safeshield/utils.sh"
+# shellcheck disable=SC1091
+. "${IPKG_INSTROOT}/usr/lib/safeshield/status.sh"
+# shellcheck disable=SC1091
+. "${IPKG_INSTROOT}/usr/lib/safeshield/log.sh"
+
+version() { echo "$PKG_VERSION"; }
+
+check_dnsmasq() { command -v dnsmasq >/dev/null 2>&1; }
+check_smartdns() { command -v smartdns >/dev/null 2>&1; }
+
+dnsmasq_kill() { killall -q -s KILL dnsmasq; }
+
+start_service() {
+    log_line "${__OK__} Starting ${PKG_NAME} service...\\n"
+}
+stop_service() {
+    log_line 2 "${__OK__} Stopping ${PKG_NAME} service...\\n"
+}
+
+reload_service() { rc_procd start_service 'reload'; }
+restart_service() { rc_procd start_service 'restart'; }
