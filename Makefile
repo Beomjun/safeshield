@@ -42,7 +42,6 @@ define Package/safeshield/install
 	$(INSTALL_DATA) ./files/safeshield.status.sh $(1)/usr/lib/safeshield/status.sh
 	$(INSTALL_DATA) ./files/safeshield.utils.sh  $(1)/usr/lib/safeshield/utils.sh
 endef
-endef
 
 define Build/Compile
 endef
