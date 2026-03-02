@@ -19,7 +19,7 @@ if type extra_command 1>/dev/null 2>&1; then
 fi
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.1.0'
+readonly PKG_VERSION='0.1.1'
 readonly LOCK_FD=309
 readonly RUNNING_STATUS_LOCK="/var/lock/${PKG_NAME}.lock"
 readonly RUNNING_STATUS_FILE="/dev/shm/${PKG_NAME}.status.json"
