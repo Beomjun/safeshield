@@ -6,22 +6,21 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.1.1
-PKG_RELEASE:=2
-PKG_LICENSE:=GPL-3.0-or-later
-PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
-PKGARCH:=all
+PKG_VERSION:=0.1.2
+PKG_RELEASE:=3
 
-PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
+PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
+PKG_LICENSE:=GPL-3.0-or-later
 
 include $(INCLUDE_DIR)/package.mk
 
 define Package/safeshield
-	SECTION:=net
-	CATEGORY:=Network
-	TITLE:=SafeShield Service
-	URL:=https://github.com/Beomjun/safeshield
-	DEPENDS:=+curl +jshn
+  SECTION:=net
+  CATEGORY:=Network
+  TITLE:=SafeShield DNS Block Service
+  URL:=https://github.com/Beomjun/safeshield
+  DEPENDS:=+jshn +uclient-fetch +dnsmasq-full +gzip +coreutils-sort +grep +sed +gawk
+  PKGARCH:=all
 endef
 
 define Package/safeshield/description
@@ -32,11 +31,6 @@ define Package/safeshield/conffiles
 /etc/config/safeshield
 endef
 
-define Build/Prepare
-	$(call Build/Prepare/Default)
-	$(CP) ./files $(PKG_BUILD_DIR)/
-endef
-
 define Build/Configure
 endef
 
@@ -45,15 +39,39 @@ endef
 
 define Package/safeshield/install
 	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/files/etc/init.d/safeshield $(1)/etc/init.d/safeshield
+	$(INSTALL_BIN) ./files/etc/init.d/safeshield $(1)/etc/init.d/safeshield
 
 	$(INSTALL_DIR) $(1)/etc/config
-	$(INSTALL_CONF) $(PKG_BUILD_DIR)/files/etc/config/safeshield $(1)/etc/config/safeshield
+	$(INSTALL_CONF) ./files/etc/config/safeshield $(1)/etc/config/safeshield
+
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) ./files/etc/uci-defaults/90-safeshield $(1)/etc/uci-defaults/90-safeshield
 
 	$(INSTALL_DIR) $(1)/usr/lib/safeshield
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/files/safeshield.log.sh    $(1)/usr/lib/safeshield/log.sh
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/files/safeshield.status.sh $(1)/usr/lib/safeshield/status.sh
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/files/safeshield.utils.sh  $(1)/usr/lib/safeshield/utils.sh
+	$(INSTALL_BIN) ./files/usr/lib/safeshield/core.sh $(1)/usr/lib/safeshield/core.sh
+	$(INSTALL_BIN) ./files/usr/lib/safeshield/log.sh $(1)/usr/lib/safeshield/log.sh
+	$(INSTALL_BIN) ./files/usr/lib/safeshield/status.sh $(1)/usr/lib/safeshield/status.sh
+	$(INSTALL_BIN) ./files/usr/lib/safeshield/utils.sh $(1)/usr/lib/safeshield/utils.sh
+endef
+
+define Package/safeshield/postinst
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ]; then
+	/etc/init.d/safeshield enable
+fi
+exit 0
+endef
+
+define Package/safeshield/prerm
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ]; then
+	echo -n "Stopping safeshield service... "
+	/etc/init.d/safeshield stop >/dev/null 2>&1 && echo "OK" || echo "FAIL"
+
+	echo -n "Removing rc.d symlink for safeshield... "
+	/etc/init.d/safeshield disable >/dev/null 2>&1 && echo "OK" || echo "FAIL"
+fi
+exit 0
 endef
 
 $(eval $(call BuildPackage,safeshield))

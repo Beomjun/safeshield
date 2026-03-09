@@ -5,62 +5,157 @@ STOP=1
 USE_PROCD=1
 LC_ALL=C
 
-if type extra_command 1>/dev/null 2>&1; then
-    extra_command 'allow' 'Allows domain in current block-list and config'
-    extra_command 'check' 'Checks if specified domain is found in current block-list'
-    extra_command 'check_tld' 'Checks if any TLDs are found in current block-list'
-    extra_command 'check_leading_dot' 'Checks if leading-dot domains are found in current block-list'
-    extra_command 'check_lists' 'Checks if specified domain is found in enabled block-lists'
+readonly PKG_NAME='safeshield'
+readonly PKG_VERSION='0.1.2'
+
+if type extra_command >/dev/null 2>&1; then
     extra_command 'delete_cache' 'Delete all cached files'
-    extra_command 'force_download' 'Force-downloads all enabled block-list'
+    extra_command 'force_download' 'Force-download all enabled block-lists'
+    extra_command 'pause' 'Pause the service'
+    extra_command 'resume' 'Resume the service'
     extra_command 'show_blocklist' 'List currently blocked domains'
-    extra_command 'sizes' 'Displays the file-sizes of configured block-lists'
+    extra_command 'sizes' 'Display configured block-list source URLs'
     extra_command 'version' 'Show version information'
 fi
-
-readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.1.1'
-readonly LOCK_FD=309
-readonly RUNNING_STATUS_LOCK="/var/lock/${PKG_NAME}.lock"
-readonly RUNNING_STATUS_FILE="/dev/shm/${PKG_NAME}.status.json"
-
-readonly _DOT_='.'
-readonly __DOT__='[w]'
-readonly _OK_='\033[0;32m\xe2\x9c\x93\033[0m'
-readonly __OK__='\033[0;32m[\xe2\x9c\x93]\033[0m'
-readonly _FAIL_='\033[0;31m\xe2\x9c\x97\033[0m'
-readonly __FAIL__='\033[0;31m[\xe2\x9c\x97]\033[0m'
-readonly _WARN_='\033[0;33m\xe2\x9c\x94\033[0m'
-readonly __WARN__='\033[0;33m[\xe2\x9c\x94]\033[0m'
-readonly _ERROR_='\033[0;31m[ERROR]\033[0m'
-readonly _WARNING_='\033[0;33m[WARN]\033[0m'
 
 # shellcheck disable=SC1091
 . "${IPKG_INSTROOT}/lib/functions.sh"
 # shellcheck disable=SC1091
 . "${IPKG_INSTROOT}/lib/functions/network.sh"
 # shellcheck disable=SC1091
-. "${IPKG_INSTROOT}/usr/share/libubox/jshn.sh"
-# shellcheck disable=SC1091
-. "${IPKG_INSTROOT}/usr/lib/safeshield/utils.sh"
-# shellcheck disable=SC1091
-. "${IPKG_INSTROOT}/usr/lib/safeshield/status.sh"
-# shellcheck disable=SC1091
-. "${IPKG_INSTROOT}/usr/lib/safeshield/log.sh"
+. "${IPKG_INSTROOT}/usr/lib/safeshield/core.sh"
 
-version() { echo "$PKG_VERSION"; }
-
-check_dnsmasq() { command -v dnsmasq >/dev/null 2>&1; }
-check_smartdns() { command -v smartdns >/dev/null 2>&1; }
-
-dnsmasq_kill() { killall -q -s KILL dnsmasq; }
+boot() {
+    rc_procd start_service boot
+}
 
 start_service() {
-    log_line "${__OK__} Starting ${PKG_NAME} service...\\n"
-}
-stop_service() {
-    log_line 2 "${__OK__} Stopping ${PKG_NAME} service...\\n"
+    log_ok "Starting ${PKG_NAME} service"
+
+    ss_load_config || {
+        log_error "Failed to load config"
+        return 1
+    }
+
+    if [ "${ss_enabled}" != "1" ]; then
+        log_warn "${PKG_NAME} is disabled"
+        return 0
+    fi
+
+    ss_mkdirs || {
+        log_error "Failed to create runtime directories"
+        return 1
+    }
+
+    safeshield_force_download
 }
 
-reload_service() { rc_procd start_service 'reload'; }
-restart_service() { rc_procd start_service 'restart'; }
+stop_service() {
+    log_ok "Stopping ${PKG_NAME} service"
+
+    rm -f "${SS_BLOCKLIST_FILE}"
+    dnsmasq_restart
+}
+
+reload_service() {
+    rc_procd start_service reload
+}
+
+restart_service() {
+    rc_procd start_service restart
+}
+
+service_triggers() {
+    procd_add_reload_trigger 'safeshield'
+}
+
+status_service() {
+    local status stage good_line_count
+
+    status="$(json get status)"
+    stage="$(json get stage)"
+    good_line_count="$(json get good_line_count)"
+
+    if [ -f "${SS_BLOCKLIST_FILE}" ]; then
+        printf '%s\n' 'blocklist: installed'
+    else
+        printf '%s\n' 'blocklist: not installed'
+    fi
+
+    if check_dns_runtime; then
+        printf '%s\n' 'dnsmasq: ok'
+    else
+        printf '%s\n' 'dnsmasq: failed'
+    fi
+
+    [ -n "$status" ] && printf 'status: %s\n' "$status"
+    [ -n "$stage" ] && printf 'stage: %s\n' "$stage"
+    [ -n "$good_line_count" ] && printf 'good_line_count: %s\n' "$good_line_count"
+}
+
+force_download() {
+    safeshield_force_download "$@"
+}
+
+delete_cache() {
+    log_info "Deleting safeshield cache files"
+
+    rm -rf "${SS_TMP_DIR}"
+    rm -f "${SS_PREV_BLOCKLIST_GZ}" "${SS_BLOCKLIST_FILE}"
+}
+
+pause() {
+    local timeout
+
+    ss_load_config || return 1
+    timeout="${1:-$ss_pause_timeout}"
+
+    if ! is_valid_integer "$timeout"; then
+        log_error "Invalid pause timeout: ${timeout}"
+        return 1
+    fi
+
+    log_info "Pausing ${PKG_NAME} for ${timeout} seconds"
+
+    ss_export_existing_blocklist >/dev/null 2>&1 || true
+    rm -f "${SS_BLOCKLIST_FILE}"
+    dnsmasq_restart
+
+    sleep "$timeout"
+
+    log_info "Resuming ${PKG_NAME} after pause"
+    ss_restore_previous_blocklist >/dev/null 2>&1 || true
+    dnsmasq_restart
+}
+
+resume() {
+    log_info "Resuming ${PKG_NAME}"
+
+    ss_restore_previous_blocklist >/dev/null 2>&1 || true
+    dnsmasq_restart
+}
+
+show_blocklist() {
+    if [ -f "${SS_BLOCKLIST_FILE}" ]; then
+        cat "${SS_BLOCKLIST_FILE}"
+    else
+        printf '%s\n' 'No installed blocklist'
+    fi
+}
+
+sizes() {
+    local section name url
+
+    ss_load_config || return 1
+
+    for section in $ss_file_url_sections; do
+        name="$(ss_config_get "$section" name "$section")"
+        url="$(ss_config_get "$section" url '')"
+        [ -n "$url" ] || continue
+        printf '%s: %s\n' "$name" "$url"
+    done
+}
+
+version() {
+    printf '%s\n' "$PKG_VERSION"
+}
