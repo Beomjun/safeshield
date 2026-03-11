@@ -26,7 +26,7 @@ ss_local_blocklist_path="/etc/safeshield/blocklist"
 ss_min_blocklist_file_part_line_count="1"
 ss_max_blocklist_file_part_size_kb="20000"
 ss_max_blocklist_file_size_kb="30000"
-ss_min_good_line_count="100000"
+ss_min_valid_line_count="100000"
 ss_compress_blocklist="0"
 ss_initial_dnsmasq_restart="0"
 ss_rogue_element_action="SKIP_PARTIAL"
@@ -40,7 +40,81 @@ ss_dnsmasq_sanity_check="1"
 ss_debug="0"
 
 ss_file_url_sections=""
-ss_good_line_count="0"
+ss_valid_line_count="0"
+
+ss_now() {
+    date +%s
+}
+
+ss_status_set_now() {
+    ss_status_set "$1" "$(ss_now)"
+}
+
+ss_status_set_bool() {
+    case "$2" in
+        1|true|yes|on) ss_status_set "$1" "1" ;;
+        *) ss_status_set "$1" "0" ;;
+    esac
+}
+
+ss_status_set_source_field() {
+    local section="$1"
+    local field="$2"
+    local value="$3"
+
+    ss_status_set "source_${section}_${field}" "$value"
+}
+
+ss_status_reset_source_fields() {
+    local section
+
+    for section in $ss_file_url_sections; do
+        ss_status_set_source_field "$section" name ""
+        ss_status_set_source_field "$section" action ""
+        ss_status_set_source_field "$section" enabled "0"
+        ss_status_set_source_field "$section" url ""
+        ss_status_set_source_field "$section" result ""
+        ss_status_set_source_field "$section" line_count "0"
+        ss_status_set_source_field "$section" size_kb "0"
+    done
+}
+
+ss_status_reset_health_fields() {
+    ss_status_set health_dnsmasq_binary ""
+    ss_status_set health_dnsmasq_confdir ""
+    ss_status_set health_dnsmasq_initial_restart ""
+    ss_status_set health_dnsmasq_final_restart ""
+    ss_status_set health_dns_runtime ""
+    ss_status_set health_blocklist_verify ""
+    ss_status_set health_min_valid_line_count ""
+    ss_status_set health_max_file_size ""
+}
+
+ss_status_reset_blocklist_fields() {
+    ss_status_set blocklist_installed "0"
+    ss_status_set blocklist_file_size_kb "0"
+    ss_status_set blocklist_verification_ok "0"
+    ss_status_set blocklist_test_domain ""
+    ss_status_set blocklist_backup_available "0"
+}
+
+ss_status_mark_failure() {
+    local code="$1"
+
+    ss_status_set status "error"
+    ss_status_set_now last_failure
+    ss_status_set last_result "error"
+    ss_status_set last_error_code "$code"
+    ss_status_add_error "$code"
+}
+
+ss_status_mark_success() {
+    ss_status_set status "ready"
+    ss_status_set stage "done"
+    ss_status_set_now last_success
+    ss_status_set last_result "success"
+    ss_status_set last_error_code ""
+}
 
 ss_status_set() {
     json set "$1" "$2" >/dev/null 2>&1 || true
@@ -55,9 +129,20 @@ ss_status_add_warning() {
 }
 
 ss_status_reset() {
+    rm -f "/dev/shm/${PKG_NAME}.status.json"
+
     ss_status_set status "idle"
     ss_status_set stage ""
-    ss_status_set good_line_count "0"
+    ss_status_set valid_line_count "0"
+
+    ss_status_set last_result "idle"
+    ss_status_set last_error_code ""
+    ss_status_set last_attempt "0"
+    ss_status_set last_success "0"
+    ss_status_set last_failure "0"
+
+    ss_status_reset_health_fields
+    ss_status_reset_blocklist_fields
 }
 
 ss_config_get() {
@@ -117,7 +202,7 @@ ss_validate_config() {
     ss_validate_int ss_min_blocklist_file_part_line_count 1 invalid_min_blocklist_file_part_line_count
     ss_validate_int ss_max_blocklist_file_part_size_kb 20000 invalid_max_blocklist_file_part_size_kb
     ss_validate_int ss_max_blocklist_file_size_kb 30000 invalid_max_blocklist_file_size_kb
-    ss_validate_int ss_min_good_line_count 100000 invalid_min_good_line_count
+    ss_validate_int ss_min_valid_line_count 100000 invalid_min_valid_line_count
     ss_validate_int ss_pause_timeout 20 invalid_pause_timeout
     ss_validate_int ss_boot_start_delay_s 30 invalid_boot_start_delay_s
 
@@ -138,7 +223,7 @@ ss_load_config() {
     ss_min_blocklist_file_part_line_count="$(ss_config_get config min_blocklist_file_part_line_count 1)"
     ss_max_blocklist_file_part_size_kb="$(ss_config_get config max_blocklist_file_part_size_kb 20000)"
     ss_max_blocklist_file_size_kb="$(ss_config_get config max_blocklist_file_size_kb 30000)"
-    ss_min_good_line_count="$(ss_config_get config min_good_line_count 100000)"
+    ss_min_valid_line_count="$(ss_config_get config min_valid_line_count 100000)"
     ss_compress_blocklist="$(ss_config_get config compress_blocklist 0)"
     ss_initial_dnsmasq_restart="$(ss_config_get config initial_dnsmasq_restart 0)"
     ss_rogue_element_action="$(ss_config_get config rogue_element_action SKIP_PARTIAL)"
@@ -268,23 +353,36 @@ ss_normalize_domains() {
         -e 's#^/##'
 }
 
-ss_is_valid_domain_stream() {
+ss_filter_valid_domains() {
     grep -E '^[a-z0-9._-]+$'
 }
 
-ss_download_one_list() {
+ss_download_source() {
     local section="$1"
     local name enabled action url output raw
     local line_count size_kb retries ok
 
     enabled="$(ss_config_get "$section" enabled 0)"
-    [ "$enabled" = "1" ] || return 0
-
     action="$(str_to_lower "$(ss_config_get "$section" action block)")"
     url="$(ss_config_get "$section" url '')"
     name="$(ss_config_get "$section" name "$section")"
 
-    [ -n "$url" ] || return 0
+    ss_status_set_source_field "$section" name "$name"
+    ss_status_set_source_field "$section" action "$action"
+    ss_status_set_source_field "$section" enabled "$enabled"
+    ss_status_set_source_field "$section" url "$url"
+    ss_status_set_source_field "$section" line_count "0"
+    ss_status_set_source_field "$section" size_kb "0"
+
+    if [ "$enabled" != "1" ]; then
+        ss_status_set_source_field "$section" result "disabled"
+        return 0
+    fi
+
+    if [ -z "$url" ]; then
+        ss_status_set_source_field "$section" result "no_url"
+        return 0
+    fi
 
     case "$action" in
         block) raw="${SS_TMP_DIR}/${section}.block.txt" ;;
@@ -292,6 +390,7 @@ ss_download_one_list() {
         *)
             log_warn "Unknown action '${action}' in section '${section}', skipping"
             ss_status_add_warning "unknown_action_${section}"
+            ss_status_set_source_field "$section" result "unknown_action"
             return 0
             ;;
     esac
@@ -316,29 +415,34 @@ ss_download_one_list() {
     if [ "$ok" != "1" ]; then
         log_warn "Download failed: ${name}"
         ss_status_add_warning "download_failed_${section}"
+        ss_status_set_source_field "$section" result "download_failed"
         [ "$ss_download_failed_action" = "STOP" ] && return 1
         return 0
     fi
 
     ss_normalize_domains < "$output" \
-        | ss_is_valid_domain_stream \
+        | ss_filter_valid_domains \
         | sort -u > "$raw"
 
     line_count="$(grep -c . "$raw" 2>/dev/null)"
     size_kb="$(du -k "$raw" 2>/dev/null | awk '{print $1}')"
 
-    if [ -z "$size_kb" ]; then
-        size_kb=0
-    fi
+    [ -n "$line_count" ] || line_count=0
+    [ -n "$size_kb" ] || size_kb=0
+
+    ss_status_set_source_field "$section" line_count "$line_count"
+    ss_status_set_source_field "$section" size_kb "$size_kb"
 
     if [ "$line_count" -lt "$ss_min_blocklist_file_part_line_count" ]; then
         log_warn "Downloaded ${name} but line count ${line_count} is below minimum ${ss_min_blocklist_file_part_line_count}"
         ss_status_add_warning "low_line_count_${section}"
+        ss_status_set_source_field "$section" result "low_line_count"
         rm -f "$raw"
         [ "$ss_download_failed_action" = "STOP" ] && return 1
         return 0
     fi
 
+    ss_status_set_source_field "$section" result "ok"
     log_ok "Downloaded ${name} (${line_count} lines, ${size_kb} KB)"
 }
 
@@ -349,7 +453,7 @@ ss_build_local_allowlist() {
 
     if [ -f "${ss_local_allowlist_path}" ]; then
         ss_normalize_domains < "${ss_local_allowlist_path}" \
-            | ss_is_valid_domain_stream \
+            | ss_filter_valid_domains \
             | sort -u >> "$out"
     fi
 }
@@ -361,7 +465,7 @@ ss_build_local_blocklist() {
 
     if [ -f "${ss_local_blocklist_path}" ]; then
         ss_normalize_domains < "${ss_local_blocklist_path}" \
-            | ss_is_valid_domain_stream \
+            | ss_filter_valid_domains \
             | sort -u >> "$out"
     fi
 }
@@ -391,7 +495,7 @@ ss_merge_lists() {
         [ -f "$f" ] || continue
         cat "$f"
     done \
-        | ss_is_valid_domain_stream \
+        | ss_filter_valid_domains \
         | sort -u > "$merged"
 
     if [ -s "$allowlist" ]; then
@@ -425,26 +529,30 @@ ss_merge_lists() {
         awk '{ print "server=/" $0 "/#" }' "$allowlist" >> "$final" || return 1
     fi
 
-    ss_good_line_count="$(grep -c . "$final" 2>/dev/null)"
-    ss_status_set good_line_count "$ss_good_line_count"
-    log_info "Final good line count: ${ss_good_line_count}"
+    ss_valid_line_count="$(grep -c . "$final" 2>/dev/null)"
+    [ -n "$ss_valid_line_count" ] || ss_valid_line_count=0
+    ss_status_set valid_line_count "$ss_valid_line_count"
+    log_info "Final valid line count: ${ss_valid_line_count}"
 
-    if [ "$ss_good_line_count" -lt "$ss_min_good_line_count" ]; then
-        log_error "good line count below minimum: ${ss_good_line_count} < ${ss_min_good_line_count}"
-        ss_status_add_error "good_line_count_below_minimum"
+    if [ "$ss_valid_line_count" -lt "$ss_min_valid_line_count" ]; then
+        ss_status_set health_min_valid_line_count "0"
+        log_error "valid line count below minimum: ${ss_valid_line_count} < ${ss_min_valid_line_count}"
+        ss_status_add_error "valid_line_count_below_minimum"
         return 1
     fi
+    ss_status_set health_min_valid_line_count "1"
 
     final_size_kb="$(du -k "$final" 2>/dev/null | awk '{print $1}')"
-    if [ -z "$final_size_kb" ]; then
-        final_size_kb=0
-    fi
+    [ -n "$final_size_kb" ] || final_size_kb=0
+    ss_status_set blocklist_file_size_kb "$final_size_kb"
 
     if [ "$final_size_kb" -gt "$ss_max_blocklist_file_size_kb" ]; then
+        ss_status_set health_max_file_size "0"
         log_error "final blocklist too large (${final_size_kb} KB > ${ss_max_blocklist_file_size_kb} KB)"
         ss_status_add_error "blocklist_too_large"
         return 1
     fi
+    ss_status_set health_max_file_size "1"
 
     if [ "${ss_dnsmasq_sanity_check}" = "1" ]; then
         if ! dnsmasq --test --conf-file="$final" >/dev/null 2>&1; then
@@ -455,6 +563,7 @@ ss_merge_lists() {
     fi
 
     mv "$final" "${SS_BLOCKLIST_FILE}" || return 1
+    ss_status_set blocklist_installed "1"
 }
 
 ss_install_blocklist() {
@@ -545,6 +654,7 @@ ss_restore_and_restart() {
 
 safeshield_force_download() {
     local section
+    local test_domain
 
     if ! ss_refresh_lock_open; then
         log_warn "Another refresh is already running, skipping"
@@ -555,17 +665,20 @@ safeshield_force_download() {
     ss_status_reset
     ss_status_set status "running"
     ss_status_set stage "init"
+    ss_status_set_now last_attempt
+    ss_status_set last_result "running"
+    ss_status_set last_error_code ""
 
     ss_load_config || {
-        ss_status_set status "error"
-        ss_status_add_error "config_load_failed"
+        ss_status_mark_failure "config_load_failed"
         ss_refresh_lock_close
         return 1
     }
 
+    ss_status_reset_source_fields
+
     ss_mkdirs || {
-        ss_status_set status "error"
-        ss_status_add_error "mkdir_failed"
+        ss_status_mark_failure "mkdir_failed"
         ss_refresh_lock_close
         return 1
     }
@@ -574,31 +687,41 @@ safeshield_force_download() {
 
     check_dnsmasq_binary || {
         log_error "dnsmasq binary not found"
-        ss_status_set status "error"
-        ss_status_add_error "dnsmasq_binary_not_found"
+        ss_status_set health_dnsmasq_binary "0"
+        ss_status_mark_failure "dnsmasq_binary_not_found"
         ss_refresh_lock_close
         return 1
     }
+    ss_status_set health_dnsmasq_binary "1"
 
     ss_check_dnsmasq_confdir || {
         log_error "dnsmasq confdir is not set to ${SS_DNSMASQ_DIR}"
         log_error "Set: uci set dhcp.@dnsmasq[0].confdir='${SS_DNSMASQ_DIR}' && uci commit dhcp"
-        ss_status_set status "error"
-        ss_status_add_error "dnsmasq_confdir_not_set"
+        ss_status_set health_dnsmasq_confdir "0"
+        ss_status_mark_failure "dnsmasq_confdir_not_set"
         ss_refresh_lock_close
         return 1
     }
+    ss_status_set health_dnsmasq_confdir "1"
 
     ss_export_existing_blocklist >/dev/null 2>&1 || true
+    if [ -f "${SS_PREV_BLOCKLIST_GZ}" ]; then
+        ss_status_set blocklist_backup_available "1"
+    else
+        ss_status_set blocklist_backup_available "0"
+    fi
 
     if [ "${ss_initial_dnsmasq_restart}" = "1" ]; then
         dnsmasq_restart || {
             log_error "Initial dnsmasq restart failed"
-            ss_status_set status "error"
-            ss_status_add_error "initial_dnsmasq_restart_failed"
+            ss_status_set health_dnsmasq_initial_restart "0"
+            ss_status_mark_failure "initial_dnsmasq_restart_failed"
             ss_refresh_lock_close
             return 1
         }
+        ss_status_set health_dnsmasq_initial_restart "1"
+    else
+        ss_status_set health_dnsmasq_initial_restart ""
     fi
 
     ss_status_set stage "prepare"
@@ -607,10 +730,9 @@ safeshield_force_download() {
 
     ss_status_set stage "download"
     for section in $ss_file_url_sections; do
-        ss_download_one_list "$section" || {
+        ss_download_source "$section" || {
             log_error "Aborting because a required list failed"
-            ss_status_set status "error"
-            ss_status_add_error "required_list_failed"
+            ss_status_mark_failure "required_list_failed"
             ss_restore_and_restart
             ss_refresh_lock_close
             return 1
@@ -620,8 +742,7 @@ safeshield_force_download() {
     ss_status_set stage "allowlist"
     ss_build_allowlist || {
         log_error "Failed to build allowlist"
-        ss_status_set status "error"
-        ss_status_add_error "allowlist_build_failed"
+        ss_status_mark_failure "allowlist_build_failed"
         ss_restore_and_restart
         ss_refresh_lock_close
         return 1
@@ -630,8 +751,7 @@ safeshield_force_download() {
     ss_status_set stage "merge"
     ss_merge_lists || {
         log_error "Failed to merge lists"
-        ss_status_set status "error"
-        ss_status_add_error "merge_failed"
+        ss_status_mark_failure "merge_failed"
         ss_restore_and_restart
         ss_refresh_lock_close
         return 1
@@ -640,8 +760,7 @@ safeshield_force_download() {
     ss_status_set stage "install"
     ss_install_blocklist || {
         log_error "Failed to install blocklist"
-        ss_status_set status "error"
-        ss_status_add_error "install_failed"
+        ss_status_mark_failure "install_failed"
         ss_restore_and_restart
         ss_refresh_lock_close
         return 1
@@ -650,36 +769,44 @@ safeshield_force_download() {
     ss_status_set stage "restart_dnsmasq"
     dnsmasq_restart || {
         log_error "dnsmasq restart failed"
-        ss_status_set status "error"
-        ss_status_add_error "dnsmasq_restart_failed"
+        ss_status_set health_dnsmasq_final_restart "0"
+        ss_status_mark_failure "dnsmasq_restart_failed"
         ss_restore_and_restart
         ss_refresh_lock_close
         return 1
     }
+    ss_status_set health_dnsmasq_final_restart "1"
 
     ss_status_set stage "runtime_check"
     if ! check_dns_runtime; then
         log_error "DNS runtime check failed, restoring previous blocklist"
-        ss_status_set status "error"
-        ss_status_add_error "dns_runtime_check_failed"
+        ss_status_set health_dns_runtime "0"
+        ss_status_mark_failure "dns_runtime_check_failed"
         ss_restore_and_restart
         ss_refresh_lock_close
         return 1
     fi
+    ss_status_set health_dns_runtime "1"
 
     ss_status_set stage "blocklist_verify"
+    test_domain="$(find_first_test_domain)"
+    [ -n "$test_domain" ] && ss_status_set blocklist_test_domain "$test_domain"
+
     if check_blocklist_applied; then
         log_ok "SafeShield applied successfully"
-        ss_status_set status "ready"
-        ss_status_set stage "done"
+        ss_status_set health_blocklist_verify "1"
+        ss_status_set blocklist_verification_ok "1"
+        ss_status_mark_success
         rm -f "${SS_PREV_BLOCKLIST_GZ}"
+        ss_status_set blocklist_backup_available "0"
         ss_refresh_lock_close
         return 0
     fi
 
     log_error "Blocklist verification failed, restoring previous blocklist"
-    ss_status_set status "error"
-    ss_status_add_error "blocklist_verification_failed"
+    ss_status_set health_blocklist_verify "0"
+    ss_status_set blocklist_verification_ok "0"
+    ss_status_mark_failure "blocklist_verification_failed"
     ss_restore_and_restart
     ss_refresh_lock_close
     return 1

@@ -77,7 +77,7 @@ service_triggers() {
 }
 
 status_service() {
-    local status stage good_line_count
+    local status stage valid_line_count
     local enabled refresh_interval_s refresh_on_boot require_wan boot_delay
 
     if ! ss_load_config >/dev/null 2>&1; then
@@ -86,7 +86,7 @@ status_service() {
 
     status="$(json get status)"
     stage="$(json get stage)"
-    good_line_count="$(json get good_line_count)"
+    valid_line_count="$(json get valid_line_count)"
 
     enabled="$(ss_config_get config enabled 0)"
     refresh_interval_s="$(ss_config_get config refresh_interval_s 82800)"
@@ -114,7 +114,7 @@ status_service() {
 
     [ -n "$status" ] && printf 'status: %s\n' "$status"
     [ -n "$stage" ] && printf 'stage: %s\n' "$stage"
-    [ -n "$good_line_count" ] && printf 'good_line_count: %s\n' "$good_line_count"
+    [ -n "$valid_line_count" ] && printf 'valid_line_count: %s\n' "$valid_line_count"
 
     if procd_running safeshield; then
         printf '%s\n' 'refreshd: running'
