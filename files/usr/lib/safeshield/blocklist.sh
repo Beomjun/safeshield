@@ -155,71 +155,77 @@ ss_build_allowlist() {
 }
 
 ss_merge_lists() {
-    local merged="${SS_TMP_DIR}/merged-domains.txt"
     local final
     local allowlist="${SS_TMP_DIR}/allowlist.txt"
     local final_size_kb
-    local f
+    local valid_count
+    local have_blocks=0
+    local i
 
     final="$(ss_blocklist_tmp_path)" || return 1
-
-    : > "$merged"
     : > "$final" || return 1
 
-    for f in "${SS_TMP_DIR}"/*.block.txt; do
+    for i in "${SS_TMP_DIR}"/*.block.txt; do
         ss_should_stop && {
             rm -f "$final"
             return 130
         }
 
-        [ -f "$f" ] || continue
-        cat "$f"
-    done \
-        | ss_filter_valid_domains \
-        | sort -u > "$merged"
+        [ -f "$i" ] || continue
+        have_blocks=1
+        break
+    done
 
-    ss_should_stop && {
-        rm -f "$final"
-        return 130
-    }
-
-    if [ -s "$allowlist" ]; then
-        awk '
-            NR == FNR {
-                allow[$0] = 1
-                next
-            }
-            {
-                n = split($0, arr, ".")
-                cur = arr[n]
-                for (i = n - 1; i >= 1; i--) {
-                    cur = arr[i] "." cur
-                    if (allow[cur]) next
+    if [ "$have_blocks" -eq 1 ]; then
+        if [ -s "$allowlist" ]; then
+            awk '
+                FNR == NR {
+                    allow[$0] = 1
+                    next
                 }
-                print
-            }
-        ' "$allowlist" "$merged" > "${merged}.filtered" || {
-            rm -f "$final"
-            return 1
-        }
 
-        mv "${merged}.filtered" "$merged" || {
-            rm -f "$final"
-            return 1
-        }
+                /^[a-z0-9._-]+$/ {
+                    if (seen[$0]++) {
+                        next
+                    }
+
+                    n = split($0, arr, ".")
+                    cur = arr[n]
+
+                    for (i = n - 1; i >= 1; i--) {
+                        cur = arr[i] "." cur
+                        if (allow[cur]) {
+                            next
+                        }
+                    }
+
+                    print "address=/" $0 "/0.0.0.0"
+                    print "address=/" $0 "/::"
+                }
+            ' "$allowlist" "${SS_TMP_DIR}"/*.block.txt > "$final" || {
+                rm -f "$final"
+                return 1
+            }
+        else
+            awk '
+                /^[a-z0-9._-]+$/ {
+                    if (seen[$0]++) {
+                        next
+                    }
+
+                    print "address=/" $0 "/0.0.0.0"
+                    print "address=/" $0 "/::"
+                }
+            ' "${SS_TMP_DIR}"/*.block.txt > "$final" || {
+                rm -f "$final"
+                return 1
+            }
+        fi
     fi
 
     ss_should_stop && {
         rm -f "$final"
         return 130
-    }
-
-    awk '{
-        print "address=/" $0 "/0.0.0.0"
-        print "address=/" $0 "/::"
-    }' "$merged" > "$final" || {
-        rm -f "$final"
-        return 1
     }
 
     if [ -s "$allowlist" ]; then
@@ -234,8 +240,9 @@ ss_merge_lists() {
         return 130
     }
 
-    ss_valid_line_count="$(grep -c . "$final" 2>/dev/null)"
-    [ -n "$ss_valid_line_count" ] || ss_valid_line_count=0
+    valid_count="$(grep -c . "$final" 2>/dev/null)"
+    [ -n "$valid_count" ] || valid_count=0
+    ss_valid_line_count="$valid_count"
     ss_status_set valid_line_count "$ss_valid_line_count"
     log_info "Final valid line count: ${ss_valid_line_count}"
 
@@ -292,6 +299,20 @@ ss_install_blocklist() {
     [ -f "${SS_BLOCKLIST_FILE}" ] || return 1
 }
 
+find_test_domains() {
+    local limit="${1:-5}"
+
+    [ -f "${SS_BLOCKLIST_FILE}" ] || return 1
+
+    awk -F'/' '
+        $1 == "address=" && ($3 == "0.0.0.0" || $3 == "::") {
+            if (!seen[$2]++) {
+                print $2
+            }
+        }
+    ' "${SS_BLOCKLIST_FILE}" | head -n "$limit"
+}
+
 check_blocklist_rule_present() {
     local domain="$1"
 
@@ -322,46 +343,6 @@ check_blocklist_applied_for_domain() {
 
     check_blocklist_rule_present "$domain" || return 1
     check_domain_blocked "$domain" || return 1
-}
-
-find_first_test_domain() {
-    [ -f "${SS_BLOCKLIST_FILE}" ] || return 1
-
-    awk -F'/' '
-        $1 == "address=" && ($3 == "0.0.0.0" || $3 == "::") {
-            print $2
-            exit
-        }
-    ' "${SS_BLOCKLIST_FILE}"
-}
-
-find_test_domains() {
-    local limit="${1:-5}"
-
-    [ -f "${SS_BLOCKLIST_FILE}" ] || return 1
-
-    awk -F'/' '
-        $1 == "address=" && ($3 == "0.0.0.0" || $3 == "::") {
-            if (!seen[$2]++) {
-                print $2
-            }
-        }
-    ' "${SS_BLOCKLIST_FILE}" | head -n "$limit"
-}
-
-check_blocklist_applied() {
-    local domain="${1:-}"
-    local test_domain
-
-    if [ -n "$domain" ]; then
-        check_blocklist_applied_for_domain "$domain"
-        return $?
-    fi
-
-    test_domain="$(find_first_test_domain)"
-    [ -n "$test_domain" ] || return 1
-
-    check_blocklist_applied_for_domain "$test_domain"
 }
 
 check_blocklist_applied_multi_with_stats() {
