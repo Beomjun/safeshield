@@ -10,6 +10,8 @@ LC_ALL=C
 readonly SS_REFRESHD_LOCK='/var/lock/safeshield-refreshd.lock'
 readonly SS_REFRESHD_LOCK_FD=308
 
+ss_should_terminate=0
+
 refreshd_lock() {
     mkdir -p "${SS_REFRESHD_LOCK%/*}" || return 1
     eval "exec ${SS_REFRESHD_LOCK_FD}>\"${SS_REFRESHD_LOCK}\"" || return 1
@@ -21,13 +23,21 @@ refreshd_unlock() {
     eval "exec ${SS_REFRESHD_LOCK_FD}>&-" 2>/dev/null || true
 }
 
+handle_term() {
+    ss_should_terminate=1
+}
+
 sleep_seconds() {
     local n="$1"
 
     while [ "$n" -gt 0 ]; do
+        [ "$ss_should_terminate" -eq 1 ] && return 1
         sleep 1
+        [ "$ss_should_terminate" -eq 1 ] && return 1
         n=$((n - 1))
     done
+
+    return 0
 }
 
 wait_for_wan_if_needed() {
@@ -51,23 +61,27 @@ main() {
 
     ss_load_config || exit 1
 
-    interval="$(ss_config_get config refresh_interval_s 82800)"
+    interval="$(ss_config_get config refresh_interval_s 21600)"
     boot_delay="$(ss_config_get config boot_start_delay_s 30)"
     refresh_on_boot="$(ss_config_get config refresh_on_boot 1)"
 
-    is_valid_integer "$interval" || interval=82800
+    is_valid_integer "$interval" || interval=21600
+    [ "$interval" -gt 0 ] 2>/dev/null || interval=21600
+
     is_valid_integer "$boot_delay" || boot_delay=30
 
     wait_for_wan_if_needed
-    sleep_seconds "$boot_delay"
+    sleep_seconds "$boot_delay" || exit 0
 
     if [ "$refresh_on_boot" = "1" ] && [ "${ss_enabled}" = "1" ]; then
         log_info "Running boot refresh"
         safeshield_force_download
+        [ "$ss_should_terminate" -eq 1 ] && exit 0
     fi
 
     while :; do
-        sleep_seconds "$interval"
+        sleep_seconds "$interval" || break
+        [ "$ss_should_terminate" -eq 1 ] && break
 
         ss_load_config || continue
 
@@ -77,12 +91,15 @@ main() {
         fi
 
         wait_for_wan_if_needed
+        [ "$ss_should_terminate" -eq 1 ] && break
 
         log_info "Running scheduled refresh"
         safeshield_force_download
+        [ "$ss_should_terminate" -eq 1 ] && break
     done
 }
 
-trap 'refreshd_unlock' EXIT INT TERM
+trap "handle_term" TERM INT
+trap "refreshd_unlock" EXIT
 
 main "$@"

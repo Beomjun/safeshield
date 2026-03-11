@@ -46,7 +46,7 @@ is_valid_integer() {
     case "$1" in
         ''|*[!0-9]*) return 1 ;;
     esac
-    [ "$1" -ge 1 ] 2>/dev/null && [ "$1" -le 65535 ] 2>/dev/null
+    [ "$1" -ge 0 ] 2>/dev/null
 }
 
 is_greater() {

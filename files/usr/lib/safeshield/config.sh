@@ -1,0 +1,123 @@
+# shellcheck shell=sh
+
+ss_enabled="0"
+ss_verbosity="2"
+ss_dns="dnsmasq.conf"
+ss_dnsmasq_instance="*"
+ss_local_allowlist_path="/etc/safeshield/allowlist"
+ss_local_blocklist_path="/etc/safeshield/blocklist"
+ss_min_blocklist_file_part_line_count="1"
+ss_max_blocklist_file_part_size_kb="20000"
+ss_max_blocklist_file_size_kb="30000"
+ss_min_valid_line_count="100000"
+ss_compress_blocklist="0"
+ss_initial_dnsmasq_restart="0"
+ss_rogue_element_action="SKIP_PARTIAL"
+ss_download_failed_action="SKIP_PARTIAL"
+ss_download_timeout="10"
+ss_download_retry="3"
+ss_parallel_downloads="0"
+ss_pause_timeout="20"
+ss_boot_start_delay_s="30"
+ss_dnsmasq_sanity_check="1"
+ss_debug="0"
+
+ss_file_url_sections=""
+ss_valid_line_count="0"
+
+ss_config_get() {
+    local section="$1"
+    local option="$2"
+    local default="$3"
+    local value
+
+    config_get value "$section" "$option"
+    if [ -n "$value" ]; then
+        printf '%s' "$value"
+    else
+        printf '%s' "$default"
+    fi
+}
+
+ss_collect_file_url_section() {
+    [ -n "$ss_file_url_sections" ] && ss_file_url_sections="${ss_file_url_sections} "
+    ss_file_url_sections="${ss_file_url_sections}$1"
+}
+
+ss_validate_bool() {
+    local var_name="$1"
+    local default="$2"
+    local warning_code="$3"
+    local value
+
+    eval "value=\${$var_name}"
+
+    case "$value" in
+        0|1) return 0 ;;
+    esac
+
+    log_warn "Invalid ${var_name} '${value}', using default ${default}"
+    ss_status_add_warning "$warning_code"
+    eval "$var_name=\$default"
+}
+
+ss_validate_int() {
+    local var_name="$1"
+    local default="$2"
+    local warning_code="$3"
+    local value
+
+    eval "value=\${$var_name}"
+
+    if ! is_valid_integer "$value"; then
+        log_warn "Invalid ${var_name} '${value}', using default ${default}"
+        ss_status_add_warning "$warning_code"
+        eval "$var_name=\$default"
+    fi
+}
+
+ss_validate_config() {
+    ss_validate_int ss_download_timeout 10 invalid_download_timeout
+    ss_validate_int ss_download_retry 3 invalid_download_retry
+    ss_validate_int ss_min_blocklist_file_part_line_count 1 invalid_min_blocklist_file_part_line_count
+    ss_validate_int ss_max_blocklist_file_part_size_kb 20000 invalid_max_blocklist_file_part_size_kb
+    ss_validate_int ss_max_blocklist_file_size_kb 30000 invalid_max_blocklist_file_size_kb
+    ss_validate_int ss_min_valid_line_count 100000 invalid_min_valid_line_count
+    ss_validate_int ss_pause_timeout 20 invalid_pause_timeout
+    ss_validate_int ss_boot_start_delay_s 30 invalid_boot_start_delay_s
+
+    ss_validate_bool ss_compress_blocklist 0 invalid_compress_blocklist
+    ss_validate_bool ss_initial_dnsmasq_restart 0 invalid_initial_dnsmasq_restart
+    ss_validate_bool ss_dnsmasq_sanity_check 1 invalid_dnsmasq_sanity_check
+}
+
+ss_load_config() {
+    config_load safeshield || return 1
+
+    ss_enabled="$(ss_config_get config enabled 0)"
+    ss_verbosity="$(ss_config_get config verbosity 2)"
+    ss_dns="$(ss_config_get config dns dnsmasq.conf)"
+    ss_dnsmasq_instance="$(ss_config_get config dnsmasq_instance '*')"
+    ss_local_allowlist_path="$(ss_config_get config local_allowlist_path /etc/safeshield/allowlist)"
+    ss_local_blocklist_path="$(ss_config_get config local_blocklist_path /etc/safeshield/blocklist)"
+    ss_min_blocklist_file_part_line_count="$(ss_config_get config min_blocklist_file_part_line_count 1)"
+    ss_max_blocklist_file_part_size_kb="$(ss_config_get config max_blocklist_file_part_size_kb 20000)"
+    ss_max_blocklist_file_size_kb="$(ss_config_get config max_blocklist_file_size_kb 30000)"
+    ss_min_valid_line_count="$(ss_config_get config min_valid_line_count 100000)"
+    ss_compress_blocklist="$(ss_config_get config compress_blocklist 0)"
+    ss_initial_dnsmasq_restart="$(ss_config_get config initial_dnsmasq_restart 0)"
+    ss_rogue_element_action="$(ss_config_get config rogue_element_action SKIP_PARTIAL)"
+    ss_download_failed_action="$(ss_config_get config download_failed_action SKIP_PARTIAL)"
+    ss_download_timeout="$(ss_config_get config download_timeout 10)"
+    ss_download_retry="$(ss_config_get config download_retry 3)"
+    ss_parallel_downloads="$(ss_config_get config parallel_downloads 0)"
+    ss_pause_timeout="$(ss_config_get config pause_timeout 20)"
+    ss_boot_start_delay_s="$(ss_config_get config boot_start_delay_s 30)"
+    ss_dnsmasq_sanity_check="$(ss_config_get config dnsmasq_sanity_check 1)"
+    ss_debug="$(ss_config_get config debug 0)"
+
+    ss_file_url_sections=""
+    config_foreach ss_collect_file_url_section file_url
+
+    ss_validate_config
+}
