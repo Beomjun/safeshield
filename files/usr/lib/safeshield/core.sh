@@ -50,13 +50,6 @@ ss_status_set_now() {
     ss_status_set "$1" "$(ss_now)"
 }
 
-ss_status_set_bool() {
-    case "$2" in
-        1|true|yes|on) ss_status_set "$1" "1" ;;
-        *) ss_status_set "$1" "0" ;;
-    esac
-}
-
 ss_status_set_source_field() {
     local section="$1"
     local field="$2"
@@ -259,6 +252,41 @@ ss_clear_active_blocklist() {
     rm -f "${SS_BLOCKLIST_FILE}"
 }
 
+ss_blocklist_tmp_path() {
+    printf '%s/.safeshield.blocklist.tmp.%s' "${SS_DNSMASQ_DIR}" "$$"
+}
+
+ss_backup_tmp_path() {
+    printf '%s.tmp.%s' "${SS_PREV_BLOCKLIST_GZ}" "$$"
+}
+
+ss_sync_path() {
+    local path="$1"
+
+    [ -n "$path" ] || return 0
+
+    sync -f "$path" 2>/dev/null && return 0
+    sync "$path" 2>/dev/null && return 0
+    sync 2>/dev/null || true
+}
+
+ss_install_blocklist_atomic() {
+    local src="$1"
+    local dst="$2"
+    local dir
+
+    [ -f "$src" ] || return 1
+    [ -n "$dst" ] || return 1
+
+    dir="${dst%/*}"
+
+    ss_sync_path "$src"
+    mv -f "$src" "$dst" || return 1
+    ss_sync_path "$dir"
+
+    return 0
+}
+
 ss_check_dnsmasq_confdir() {
     local confdir
 
@@ -321,17 +349,47 @@ dnsmasq_restart() {
 }
 
 ss_export_existing_blocklist() {
+    local tmp
+
     [ -f "${SS_BLOCKLIST_FILE}" ] || return 1
     command_exists gzip || return 1
 
-    gzip -c "${SS_BLOCKLIST_FILE}" > "${SS_PREV_BLOCKLIST_GZ}" || return 1
+    tmp="$(ss_backup_tmp_path)" || return 1
+
+    gzip -c "${SS_BLOCKLIST_FILE}" > "$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+
+    ss_sync_path "$tmp"
+    mv -f "$tmp" "${SS_PREV_BLOCKLIST_GZ}" || {
+        rm -f "$tmp"
+        return 1
+    }
+    ss_sync_path "${SS_PREV_BLOCKLIST_GZ%/*}"
+
+    return 0
 }
 
 ss_restore_previous_blocklist() {
+    local tmp
+
     [ -f "${SS_PREV_BLOCKLIST_GZ}" ] || return 1
     command_exists gunzip || return 1
 
-    gunzip -c "${SS_PREV_BLOCKLIST_GZ}" > "${SS_BLOCKLIST_FILE}" || return 1
+    tmp="$(ss_blocklist_tmp_path)" || return 1
+
+    gunzip -c "${SS_PREV_BLOCKLIST_GZ}" > "$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+
+    ss_install_blocklist_atomic "$tmp" "${SS_BLOCKLIST_FILE}" || {
+        rm -f "$tmp"
+        return 1
+    }
+
+    return 0
 }
 
 ss_normalize_domains() {
@@ -484,12 +542,15 @@ ss_build_allowlist() {
 
 ss_merge_lists() {
     local merged="${SS_TMP_DIR}/merged-domains.txt"
-    local final="${SS_TMP_DIR}/final-dnsmasq.conf"
+    local final
     local allowlist="${SS_TMP_DIR}/allowlist.txt"
     local final_size_kb
     local f
 
+    final="$(ss_blocklist_tmp_path)" || return 1
+
     : > "$merged"
+    : > "$final" || return 1
 
     for f in "${SS_TMP_DIR}"/*.block.txt; do
         [ -f "$f" ] || continue
@@ -513,20 +574,30 @@ ss_merge_lists() {
                 }
                 print
             }
-        ' "$allowlist" "$merged" > "${merged}.filtered" || return 1
+        ' "$allowlist" "$merged" > "${merged}.filtered" || {
+            rm -f "$final"
+            return 1
+        }
 
-        mv "${merged}.filtered" "$merged" || return 1
+        mv "${merged}.filtered" "$merged" || {
+            rm -f "$final"
+            return 1
+        }
     fi
-
-    : > "$final"
 
     awk '{
         print "address=/" $0 "/0.0.0.0"
         print "address=/" $0 "/::"
-    }' "$merged" > "$final" || return 1
+    }' "$merged" > "$final" || {
+        rm -f "$final"
+        return 1
+    }
 
     if [ -s "$allowlist" ]; then
-        awk '{ print "server=/" $0 "/#" }' "$allowlist" >> "$final" || return 1
+        awk '{ print "server=/" $0 "/#" }' "$allowlist" >> "$final" || {
+            rm -f "$final"
+            return 1
+        }
     fi
 
     ss_valid_line_count="$(grep -c . "$final" 2>/dev/null)"
@@ -538,6 +609,7 @@ ss_merge_lists() {
         ss_status_set health_min_valid_line_count "0"
         log_error "valid line count below minimum: ${ss_valid_line_count} < ${ss_min_valid_line_count}"
         ss_status_add_error "valid_line_count_below_minimum"
+        rm -f "$final"
         return 1
     fi
     ss_status_set health_min_valid_line_count "1"
@@ -550,6 +622,7 @@ ss_merge_lists() {
         ss_status_set health_max_file_size "0"
         log_error "final blocklist too large (${final_size_kb} KB > ${ss_max_blocklist_file_size_kb} KB)"
         ss_status_add_error "blocklist_too_large"
+        rm -f "$final"
         return 1
     fi
     ss_status_set health_max_file_size "1"
@@ -558,11 +631,16 @@ ss_merge_lists() {
         if ! dnsmasq --test --conf-file="$final" >/dev/null 2>&1; then
             log_error "dnsmasq --test failed"
             ss_status_add_error "dnsmasq_test_failed"
+            rm -f "$final"
             return 1
         fi
     fi
 
-    mv "$final" "${SS_BLOCKLIST_FILE}" || return 1
+    ss_install_blocklist_atomic "$final" "${SS_BLOCKLIST_FILE}" || {
+        rm -f "$final"
+        return 1
+    }
+
     ss_status_set blocklist_installed "1"
 }
 
