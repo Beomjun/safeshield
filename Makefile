@@ -6,8 +6,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.1.2
-PKG_RELEASE:=3
+PKG_VERSION:=0.2.0
+PKG_RELEASE:=4
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -40,6 +40,9 @@ endef
 define Package/safeshield/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/safeshield $(1)/etc/init.d/safeshield
+
+	$(INSTALL_DIR) $(1)/usr/libexec
+	$(INSTALL_BIN) ./files/usr/libexec/safeshield-refreshd $(1)/usr/libexec/safeshield-refreshd
 
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/safeshield $(1)/etc/config/safeshield

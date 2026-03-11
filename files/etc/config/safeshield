@@ -1,33 +1,28 @@
 config safeshield 'config'
 	option enabled '1'
 	option verbosity '2'
-
 	option dns 'dnsmasq.conf'
 	option dnsmasq_instance '*'
-
 	option local_allowlist_path '/etc/safeshield/allowlist'
 	option local_blocklist_path '/etc/safeshield/blocklist'
-
 	option min_blocklist_file_part_line_count '1'
 	option max_blocklist_file_part_size_kb '20000'
 	option max_blocklist_file_size_kb '30000'
 	option min_good_line_count '100000'
-
 	option compress_blocklist '0'
 	option initial_dnsmasq_restart '0'
-
 	option rogue_element_action 'SKIP_PARTIAL'
 	option download_failed_action 'SKIP_PARTIAL'
-
 	option download_timeout '10'
 	option download_retry '3'
 	option parallel_downloads '0'
-
 	option pause_timeout '20'
 	option boot_start_delay_s '30'
-
 	option dnsmasq_sanity_check '1'
 	option debug '0'
+	option refresh_on_boot '1'
+	option refresh_interval_s '82800'
+	option require_wan '1'
 
 config file_url
 	option name 'HaGeZi Pro'

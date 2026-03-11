@@ -1,0 +1,88 @@
+#!/bin/sh
+
+LC_ALL=C
+
+# shellcheck disable=SC1091
+. /lib/functions.sh
+# shellcheck disable=SC1091
+. /usr/lib/safeshield/core.sh
+
+readonly SS_REFRESHD_LOCK='/var/lock/safeshield-refreshd.lock'
+readonly SS_REFRESHD_LOCK_FD=308
+
+refreshd_lock() {
+    mkdir -p "${SS_REFRESHD_LOCK%/*}" || return 1
+    eval "exec ${SS_REFRESHD_LOCK_FD}>\"${SS_REFRESHD_LOCK}\"" || return 1
+    flock -n "${SS_REFRESHD_LOCK_FD}" || return 1
+}
+
+refreshd_unlock() {
+    flock -u "${SS_REFRESHD_LOCK_FD}" 2>/dev/null || true
+    eval "exec ${SS_REFRESHD_LOCK_FD}>&-" 2>/dev/null || true
+}
+
+sleep_seconds() {
+    local n="$1"
+
+    while [ "$n" -gt 0 ]; do
+        sleep 1
+        n=$((n - 1))
+    done
+}
+
+wait_for_wan_if_needed() {
+    local require_wan
+
+    require_wan="$(ss_config_get config require_wan 1)"
+
+    case "$require_wan" in
+        1)
+            ubus -t 30 wait_for network.interface.wan 2>/dev/null || true
+            ;;
+    esac
+}
+
+main() {
+    local interval
+    local boot_delay
+    local refresh_on_boot
+
+    refreshd_lock || exit 0
+
+    ss_load_config || exit 1
+
+    interval="$(ss_config_get config refresh_interval_s 82800)"
+    boot_delay="$(ss_config_get config boot_start_delay_s 30)"
+    refresh_on_boot="$(ss_config_get config refresh_on_boot 1)"
+
+    is_valid_integer "$interval" || interval=82800
+    is_valid_integer "$boot_delay" || boot_delay=30
+
+    wait_for_wan_if_needed
+    sleep_seconds "$boot_delay"
+
+    if [ "$refresh_on_boot" = "1" ] && [ "${ss_enabled}" = "1" ]; then
+        log_info "Running boot refresh"
+        safeshield_force_download
+    fi
+
+    while :; do
+        sleep_seconds "$interval"
+
+        ss_load_config || continue
+
+        if [ "${ss_enabled}" != "1" ]; then
+            log_info "Safeshield disabled, skipping scheduled refresh"
+            continue
+        fi
+
+        wait_for_wan_if_needed
+
+        log_info "Running scheduled refresh"
+        safeshield_force_download
+    done
+}
+
+trap 'refreshd_unlock' EXIT INT TERM
+
+main "$@"

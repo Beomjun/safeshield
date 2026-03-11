@@ -14,6 +14,8 @@ readonly SS_DNSMASQ_DIR="/tmp/dnsmasq.d"
 readonly SS_BLOCKLIST_FILE="${SS_DNSMASQ_DIR}/safeshield.blocklist"
 readonly SS_PREV_BLOCKLIST_GZ="/tmp/safeshield.prev.blocklist.gz"
 readonly SS_RUNTIME_OUT="${SS_TMP_DIR}/runtime.out"
+readonly SS_REFRESH_LOCK='/var/lock/safeshield-refresh.lock'
+readonly SS_REFRESH_LOCK_FD=307
 
 ss_enabled="0"
 ss_verbosity="2"
@@ -522,6 +524,20 @@ check_blocklist_applied() {
     check_blocklist_applied_for_domain "$test_domain"
 }
 
+ss_refresh_lock_open() {
+    mkdir -p "${SS_REFRESH_LOCK%/*}" || return 1
+    eval "exec ${SS_REFRESH_LOCK_FD}>\"${SS_REFRESH_LOCK}\"" || return 1
+    flock -n "${SS_REFRESH_LOCK_FD}" || {
+        eval "exec ${SS_REFRESH_LOCK_FD}>&-"
+        return 1
+    }
+}
+
+ss_refresh_lock_close() {
+    flock -u "${SS_REFRESH_LOCK_FD}" 2>/dev/null || true
+    eval "exec ${SS_REFRESH_LOCK_FD}>&-" 2>/dev/null || true
+}
+
 ss_restore_and_restart() {
     ss_restore_previous_blocklist >/dev/null 2>&1 || true
     dnsmasq_restart >/dev/null 2>&1 || true
@@ -530,6 +546,12 @@ ss_restore_and_restart() {
 safeshield_force_download() {
     local section
 
+    if ! ss_refresh_lock_open; then
+        log_warn "Another refresh is already running, skipping"
+        ss_status_add_warning "refresh_already_running"
+        return 0
+    fi
+
     ss_status_reset
     ss_status_set status "running"
     ss_status_set stage "init"
@@ -537,12 +559,14 @@ safeshield_force_download() {
     ss_load_config || {
         ss_status_set status "error"
         ss_status_add_error "config_load_failed"
+        ss_refresh_lock_close
         return 1
     }
 
     ss_mkdirs || {
         ss_status_set status "error"
         ss_status_add_error "mkdir_failed"
+        ss_refresh_lock_close
         return 1
     }
 
@@ -552,6 +576,7 @@ safeshield_force_download() {
         log_error "dnsmasq binary not found"
         ss_status_set status "error"
         ss_status_add_error "dnsmasq_binary_not_found"
+        ss_refresh_lock_close
         return 1
     }
 
@@ -560,6 +585,7 @@ safeshield_force_download() {
         log_error "Set: uci set dhcp.@dnsmasq[0].confdir='${SS_DNSMASQ_DIR}' && uci commit dhcp"
         ss_status_set status "error"
         ss_status_add_error "dnsmasq_confdir_not_set"
+        ss_refresh_lock_close
         return 1
     }
 
@@ -570,6 +596,7 @@ safeshield_force_download() {
             log_error "Initial dnsmasq restart failed"
             ss_status_set status "error"
             ss_status_add_error "initial_dnsmasq_restart_failed"
+            ss_refresh_lock_close
             return 1
         }
     fi
@@ -585,6 +612,7 @@ safeshield_force_download() {
             ss_status_set status "error"
             ss_status_add_error "required_list_failed"
             ss_restore_and_restart
+            ss_refresh_lock_close
             return 1
         }
     done
@@ -595,6 +623,7 @@ safeshield_force_download() {
         ss_status_set status "error"
         ss_status_add_error "allowlist_build_failed"
         ss_restore_and_restart
+        ss_refresh_lock_close
         return 1
     }
 
@@ -604,6 +633,7 @@ safeshield_force_download() {
         ss_status_set status "error"
         ss_status_add_error "merge_failed"
         ss_restore_and_restart
+        ss_refresh_lock_close
         return 1
     }
 
@@ -613,6 +643,7 @@ safeshield_force_download() {
         ss_status_set status "error"
         ss_status_add_error "install_failed"
         ss_restore_and_restart
+        ss_refresh_lock_close
         return 1
     }
 
@@ -622,6 +653,7 @@ safeshield_force_download() {
         ss_status_set status "error"
         ss_status_add_error "dnsmasq_restart_failed"
         ss_restore_and_restart
+        ss_refresh_lock_close
         return 1
     }
 
@@ -631,6 +663,7 @@ safeshield_force_download() {
         ss_status_set status "error"
         ss_status_add_error "dns_runtime_check_failed"
         ss_restore_and_restart
+        ss_refresh_lock_close
         return 1
     fi
 
@@ -640,6 +673,7 @@ safeshield_force_download() {
         ss_status_set status "ready"
         ss_status_set stage "done"
         rm -f "${SS_PREV_BLOCKLIST_GZ}"
+        ss_refresh_lock_close
         return 0
     fi
 
@@ -647,5 +681,6 @@ safeshield_force_download() {
     ss_status_set status "error"
     ss_status_add_error "blocklist_verification_failed"
     ss_restore_and_restart
+    ss_refresh_lock_close
     return 1
 }

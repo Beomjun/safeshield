@@ -6,12 +6,13 @@ USE_PROCD=1
 LC_ALL=C
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.1.2'
+readonly PKG_VERSION='0.2.0'
 
 if type extra_command >/dev/null 2>&1; then
     extra_command 'delete_cache' 'Delete all cached files'
     extra_command 'force_download' 'Force-download all enabled block-lists'
     extra_command 'pause' 'Pause the service'
+    extra_command 'refresh_once' 'Run one immediate refresh in foreground'
     extra_command 'resume' 'Resume the service'
     extra_command 'show_blocklist' 'List currently blocked domains'
     extra_command 'sizes' 'Display configured block-list source URLs'
@@ -30,8 +31,6 @@ boot() {
 }
 
 start_service() {
-    log_ok "Starting ${PKG_NAME} service"
-
     ss_load_config || {
         log_error "Failed to load config"
         return 1
@@ -47,34 +46,59 @@ start_service() {
         return 1
     }
 
-    safeshield_force_download
+    procd_open_instance
+    procd_set_param command /usr/libexec/safeshield-refreshd
+    procd_set_param respawn 3600 5 5
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param file /etc/config/safeshield
+    procd_set_param data service safeshield
+    procd_close_instance
 }
 
 stop_service() {
-    log_ok "Stopping ${PKG_NAME} service"
-
-    rm -f "${SS_BLOCKLIST_FILE}"
-    dnsmasq_restart
+    return 0
 }
 
 reload_service() {
-    rc_procd start_service reload
+    stop
+    start
 }
 
 restart_service() {
-    rc_procd start_service restart
+    stop
+    start
 }
 
 service_triggers() {
     procd_add_reload_trigger 'safeshield'
+    procd_add_reload_interface_trigger 'wan' /etc/init.d/safeshield reload
+    procd_add_reload_interface_trigger 'wan6' /etc/init.d/safeshield reload
 }
 
 status_service() {
     local status stage good_line_count
+    local enabled refresh_interval_s refresh_on_boot require_wan boot_delay
+
+    if ! ss_load_config >/dev/null 2>&1; then
+        printf '%s\n' 'config: load failed'
+    fi
 
     status="$(json get status)"
     stage="$(json get stage)"
     good_line_count="$(json get good_line_count)"
+
+    enabled="$(ss_config_get config enabled 0)"
+    refresh_interval_s="$(ss_config_get config refresh_interval_s 82800)"
+    refresh_on_boot="$(ss_config_get config refresh_on_boot 1)"
+    require_wan="$(ss_config_get config require_wan 1)"
+    boot_delay="$(ss_config_get config boot_start_delay_s 30)"
+
+    printf 'enabled: %s\n' "$enabled"
+    printf 'refresh_interval_s: %s\n' "$refresh_interval_s"
+    printf 'refresh_on_boot: %s\n' "$refresh_on_boot"
+    printf 'require_wan: %s\n' "$require_wan"
+    printf 'boot_start_delay_s: %s\n' "$boot_delay"
 
     if [ -f "${SS_BLOCKLIST_FILE}" ]; then
         printf '%s\n' 'blocklist: installed'
@@ -91,10 +115,22 @@ status_service() {
     [ -n "$status" ] && printf 'status: %s\n' "$status"
     [ -n "$stage" ] && printf 'stage: %s\n' "$stage"
     [ -n "$good_line_count" ] && printf 'good_line_count: %s\n' "$good_line_count"
+
+    if procd_running safeshield; then
+        printf '%s\n' 'refreshd: running'
+    else
+        printf '%s\n' 'refreshd: stopped'
+    fi
+}
+
+refresh_once() {
+    ss_load_config || return 1
+    ss_mkdirs || return 1
+    safeshield_force_download
 }
 
 force_download() {
-    safeshield_force_download "$@"
+    refresh_once "$@"
 }
 
 delete_cache() {
