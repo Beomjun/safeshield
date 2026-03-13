@@ -1,4 +1,8 @@
 #!/bin/sh
+# shellcheck shell=ash
+
+# Variables below are populated by sourced helpers and ss_load_config()
+# shellcheck disable=SC2154
 
 LC_ALL=C
 
@@ -13,111 +17,111 @@ readonly SS_REFRESHD_LOCK_FD=308
 ss_should_terminate=0
 
 refreshd_lock() {
-    mkdir -p "${SS_REFRESHD_LOCK%/*}" || return 1
-    eval "exec ${SS_REFRESHD_LOCK_FD}>\"${SS_REFRESHD_LOCK}\"" || return 1
-    flock -n "${SS_REFRESHD_LOCK_FD}" || return 1
+	mkdir -p "${SS_REFRESHD_LOCK%/*}" || return 1
+	eval "exec ${SS_REFRESHD_LOCK_FD}>\"${SS_REFRESHD_LOCK}\"" || return 1
+	flock -n "${SS_REFRESHD_LOCK_FD}" || return 1
 }
 
 refreshd_unlock() {
-    flock -u "${SS_REFRESHD_LOCK_FD}" 2>/dev/null || true
-    eval "exec ${SS_REFRESHD_LOCK_FD}>&-" 2>/dev/null || true
+	flock -u "${SS_REFRESHD_LOCK_FD}" 2>/dev/null || true
+	eval "exec ${SS_REFRESHD_LOCK_FD}>&-" 2>/dev/null || true
 }
 
 handle_term() {
-    ss_should_terminate=1
+	ss_should_terminate=1
 }
 
 sleep_seconds() {
-    local n="$1"
+	local n="$1"
 
-    while [ "$n" -gt 0 ]; do
-        [ "$ss_should_terminate" -eq 1 ] && return 1
-        sleep 1
-        [ "$ss_should_terminate" -eq 1 ] && return 1
-        n=$((n - 1))
-    done
+	while [ "$n" -gt 0 ]; do
+		[ "$ss_should_terminate" -eq 1 ] && return 1
+		sleep 1
+		[ "$ss_should_terminate" -eq 1 ] && return 1
+		n=$((n - 1))
+	done
 
-    return 0
+	return 0
 }
 
 wait_for_wan_if_needed() {
-    local require_wan
+	local require_wan
 
-    require_wan="$(ss_config_get config require_wan 1)"
+	require_wan="$(ss_config_get config require_wan 1)"
 
-    case "$require_wan" in
-        1)
-            ubus -t 30 wait_for network.interface.wan 2>/dev/null || true
-            ;;
-    esac
+	case "$require_wan" in
+		1)
+			ubus -t 30 wait_for network.interface.wan 2>/dev/null || true
+			;;
+	esac
 }
 
 set_next_refresh_at() {
-    local after_s="$1"
-    local now
+	local after_s="$1"
+	local now
 
-    is_valid_integer "$after_s" || after_s=0
-    now="$(date +%s)"
-    ss_status_set next_refresh_at "$((now + after_s))"
+	is_valid_integer "$after_s" || after_s=0
+	now="$(date +%s)"
+	ss_status_set next_refresh_at "$((now + after_s))"
 }
 
 clear_next_refresh_at() {
-    ss_status_set next_refresh_at "0"
+	ss_status_set next_refresh_at "0"
 }
 
 main() {
-    local interval
-    local boot_delay
-    local refresh_on_boot
+	local interval
+	local boot_delay
+	local refresh_on_boot
 
-    refreshd_lock || exit 0
+	refreshd_lock || exit 0
 
-    ss_load_config || exit 1
+	ss_load_config || exit 1
 
-    interval="$(ss_config_get config refresh_interval_s 21600)"
-    boot_delay="$(ss_config_get config boot_start_delay_s 30)"
-    refresh_on_boot="$(ss_config_get config refresh_on_boot 1)"
+	interval="$(ss_config_get config refresh_interval_s 21600)"
+	boot_delay="$(ss_config_get config boot_start_delay_s 30)"
+	refresh_on_boot="$(ss_config_get config refresh_on_boot 1)"
 
-    is_valid_integer "$interval" || interval=21600
-    [ "$interval" -gt 0 ] 2>/dev/null || interval=21600
+	is_valid_integer "$interval" || interval=21600
+	[ "$interval" -gt 0 ] 2>/dev/null || interval=21600
 
-    is_valid_integer "$boot_delay" || boot_delay=30
+	is_valid_integer "$boot_delay" || boot_delay=30
 
-    wait_for_wan_if_needed
-    set_next_refresh_at "$boot_delay"
-    sleep_seconds "$boot_delay" || exit 0
+	wait_for_wan_if_needed
+	set_next_refresh_at "$boot_delay"
+	sleep_seconds "$boot_delay" || exit 0
 
-    if [ "$refresh_on_boot" = "1" ] && [ "${ss_enabled}" = "1" ]; then
-        log_info "Running boot refresh"
-        clear_next_refresh_at
-        safeshield_force_download
-        [ "$ss_should_terminate" -eq 1 ] && exit 0
-    fi
+	if [ "$refresh_on_boot" = "1" ] && [ "${ss_enabled}" = "1" ]; then
+		log_info "Running boot refresh"
+		clear_next_refresh_at
+		safeshield_force_download
+		[ "$ss_should_terminate" -eq 1 ] && exit 0
+	fi
 
-    while :; do
-        set_next_refresh_at "$interval"
-        log_info "Next refresh scheduled in ${interval}s"
-        sleep_seconds "$interval" || break
-        [ "$ss_should_terminate" -eq 1 ] && break
+	while :; do
+		set_next_refresh_at "$interval"
+		log_info "Next refresh scheduled in ${interval}s"
+		sleep_seconds "$interval" || break
+		[ "$ss_should_terminate" -eq 1 ] && break
 
-        ss_load_config || continue
+		ss_load_config || continue
 
-        if [ "${ss_enabled}" != "1" ]; then
-            log_info "Safeshield disabled, skipping scheduled refresh"
-            continue
-        fi
+		if [ "${ss_enabled}" != "1" ]; then
+			log_info "Safeshield disabled, skipping scheduled refresh"
+			continue
+		fi
 
-        wait_for_wan_if_needed
-        [ "$ss_should_terminate" -eq 1 ] && break
+		wait_for_wan_if_needed
+		[ "$ss_should_terminate" -eq 1 ] && break
 
-        log_info "Running scheduled refresh"
-        clear_next_refresh_at
-        safeshield_force_download
-        [ "$ss_should_terminate" -eq 1 ] && break
-        set_next_refresh_at "$interval"
-    done
+		log_info "Running scheduled refresh"
+		clear_next_refresh_at
+		safeshield_force_download
+		[ "$ss_should_terminate" -eq 1 ] && break
+		set_next_refresh_at "$interval"
+	done
 
-    clear_next_refresh_at
+	clear_next_refresh_at
 }
 
 trap "handle_term" TERM INT

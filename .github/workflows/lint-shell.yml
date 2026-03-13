@@ -61,7 +61,7 @@ jobs:
         shell: bash
         run: |
           set -eu
-          xargs -r shfmt -d -i 2 -ci < shell-files.txt
+          xargs -r shfmt -d -ci < shell-files.txt
 
       - name: Run ShellCheck
         if: steps.files.outputs.found == 'true'
