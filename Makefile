@@ -47,9 +47,6 @@ define Package/safeshield/install
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/safeshield $(1)/etc/config/safeshield
 
-	$(INSTALL_DIR) $(1)/etc/uci-defaults
-	$(INSTALL_BIN) ./files/etc/uci-defaults/90-safeshield $(1)/etc/uci-defaults/90-safeshield
-
 	$(INSTALL_DIR) $(1)/usr/lib/safeshield
 	$(INSTALL_BIN) ./files/usr/lib/safeshield/core.sh $(1)/usr/lib/safeshield/core.sh
 	$(INSTALL_BIN) ./files/usr/lib/safeshield/log.sh $(1)/usr/lib/safeshield/log.sh
