@@ -6,7 +6,7 @@ USE_PROCD=1
 LC_ALL=C
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.2.0'
+readonly PKG_VERSION='0.2.1'
 
 if type extra_command >/dev/null 2>&1; then
     extra_command 'delete_cache' 'Delete all cached files'
@@ -84,15 +84,24 @@ status_service() {
         printf '%s\n' 'config: load failed'
     fi
 
-    status="$(json get status)"
-    stage="$(json get stage)"
-    valid_line_count="$(json get valid_line_count)"
-
     enabled="$(ss_config_get config enabled 0)"
     refresh_interval_s="$(ss_config_get config refresh_interval_s 82800)"
     refresh_on_boot="$(ss_config_get config refresh_on_boot 1)"
     require_wan="$(ss_config_get config require_wan 1)"
     boot_delay="$(ss_config_get config boot_start_delay_s 30)"
+
+    status=""
+    stage=""
+    valid_line_count="0"
+
+    if [ -f "${RUNNING_STATUS_FILE}" ]; then
+        status="$(json get status 2>/dev/null)"
+        stage="$(json get stage 2>/dev/null)"
+        valid_line_count="$(json get valid_line_count 2>/dev/null)"
+    fi
+
+    [ -n "$status" ] || status="idle"
+    [ -n "$valid_line_count" ] || valid_line_count="0"
 
     printf 'enabled: %s\n' "$enabled"
     printf 'refresh_interval_s: %s\n' "$refresh_interval_s"
@@ -112,9 +121,9 @@ status_service() {
         printf '%s\n' 'dnsmasq: failed'
     fi
 
-    [ -n "$status" ] && printf 'status: %s\n' "$status"
+    printf 'status: %s\n' "$status"
     [ -n "$stage" ] && printf 'stage: %s\n' "$stage"
-    [ -n "$valid_line_count" ] && printf 'valid_line_count: %s\n' "$valid_line_count"
+    printf 'valid_line_count: %s\n' "$valid_line_count"
 
     if procd_running safeshield; then
         printf '%s\n' 'refreshd: running'
