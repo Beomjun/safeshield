@@ -19,7 +19,7 @@ define Package/safeshield
   CATEGORY:=Network
   TITLE:=SafeShield DNS Block Service
   URL:=https://github.com/Beomjun/safeshield
-  DEPENDS:=+jshn +uclient-fetch +dnsmasq-full +gzip +coreutils-sort +grep +sed +gawk
+  DEPENDS:=+jshn +uclient-fetch +dnsmasq-full +gzip +coreutils-sort +grep +sed +gawk +procd +rpcd +rpcd-mod-ucode +ucode
   PKGARCH:=all
 endef
 
@@ -52,6 +52,13 @@ define Package/safeshield/install
 	$(INSTALL_BIN) ./files/usr/lib/safeshield/log.sh $(1)/usr/lib/safeshield/log.sh
 	$(INSTALL_BIN) ./files/usr/lib/safeshield/status.sh $(1)/usr/lib/safeshield/status.sh
 	$(INSTALL_BIN) ./files/usr/lib/safeshield/utils.sh $(1)/usr/lib/safeshield/utils.sh
+	$(INSTALL_DATA) ./files/usr/lib/safeshield/config.sh $(1)/usr/lib/safeshield/config.sh
+	$(INSTALL_DATA) ./files/usr/lib/safeshield/dns.sh $(1)/usr/lib/safeshield/dns.sh
+	$(INSTALL_DATA) ./files/usr/lib/safeshield/blocklist.sh $(1)/usr/lib/safeshield/blocklist.sh
+	echo '$(PKG_VERSION)-$(PKG_RELEASE)' > $(1)/usr/lib/safeshield/version
+
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/ucode
+	$(INSTALL_BIN) ./files/usr/share/rpcd/ucode/safeshield.uc $(1)/usr/share/rpcd/ucode/safeshield.uc
 endef
 
 define Package/safeshield/postinst

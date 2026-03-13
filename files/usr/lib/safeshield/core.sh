@@ -48,7 +48,6 @@ safeshield_force_download() {
 
     if ! ss_refresh_lock_open; then
         log_warn "Another refresh is already running, skipping"
-        ss_status_add_warning "refresh_already_running"
         return 0
     fi
 

@@ -110,6 +110,7 @@ ss_status_reset() {
     ss_status_set last_attempt "0"
     ss_status_set last_success "0"
     ss_status_set last_failure "0"
+    ss_status_set next_refresh_at "0"
 
     ss_status_reset_health_fields
     ss_status_reset_blocklist_fields

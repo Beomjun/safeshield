@@ -52,6 +52,19 @@ wait_for_wan_if_needed() {
     esac
 }
 
+set_next_refresh_at() {
+    local after_s="$1"
+    local now
+
+    is_valid_integer "$after_s" || after_s=0
+    now="$(date +%s)"
+    ss_status_set next_refresh_at "$((now + after_s))"
+}
+
+clear_next_refresh_at() {
+    ss_status_set next_refresh_at "0"
+}
+
 main() {
     local interval
     local boot_delay
@@ -71,15 +84,19 @@ main() {
     is_valid_integer "$boot_delay" || boot_delay=30
 
     wait_for_wan_if_needed
+    set_next_refresh_at "$boot_delay"
     sleep_seconds "$boot_delay" || exit 0
 
     if [ "$refresh_on_boot" = "1" ] && [ "${ss_enabled}" = "1" ]; then
         log_info "Running boot refresh"
+        clear_next_refresh_at
         safeshield_force_download
         [ "$ss_should_terminate" -eq 1 ] && exit 0
     fi
 
     while :; do
+        set_next_refresh_at "$interval"
+        log_info "Next refresh scheduled in ${interval}s"
         sleep_seconds "$interval" || break
         [ "$ss_should_terminate" -eq 1 ] && break
 
@@ -94,12 +111,16 @@ main() {
         [ "$ss_should_terminate" -eq 1 ] && break
 
         log_info "Running scheduled refresh"
+        clear_next_refresh_at
         safeshield_force_download
         [ "$ss_should_terminate" -eq 1 ] && break
+        set_next_refresh_at "$interval"
     done
+
+    clear_next_refresh_at
 }
 
 trap "handle_term" TERM INT
-trap "refreshd_unlock" EXIT
+trap "refreshd_unlock; clear_next_refresh_at" EXIT
 
 main "$@"

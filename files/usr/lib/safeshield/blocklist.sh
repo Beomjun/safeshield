@@ -70,7 +70,7 @@ ss_download_source() {
 
         log_info "Downloading [${action}] ${name} (try ${retries}/${ss_download_retry})"
 
-        if uclient-fetch "$url" -O- --timeout="${ss_download_timeout}" \
+        if uclient-fetch "$url" -O- --timeout="${ss_download_timeout}" 2>/dev/null \
             | head -c "${ss_max_blocklist_file_part_size_kb}k" > "$output"; then
             ok=1
             break
