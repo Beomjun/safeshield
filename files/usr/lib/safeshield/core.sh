@@ -48,6 +48,54 @@ ss_restore_and_restart() {
 	dnsmasq_restart >/dev/null 2>&1 || true
 }
 
+ss_ensure_dnsmasq_confdir() {
+	local changed=0
+
+	mkdir -p "${SS_DNSMASQ_DIR}" || {
+		log_error "Failed to create dnsmasq confdir: ${SS_DNSMASQ_DIR}"
+		return 1
+	}
+
+	if ss_check_dnsmasq_confdir; then
+		return 0
+	fi
+
+	uci -q get dhcp.@dnsmasq[0] >/dev/null || {
+		log_error "dnsmasq UCI section not found: dhcp.@dnsmasq[0]"
+		return 1
+	}
+
+	log_warn "dnsmasq confdir is not set to ${SS_DNSMASQ_DIR}, attempting automatic setup"
+
+	if ! uci show dhcp | grep -Fq ".confdir='${SS_DNSMASQ_DIR}'"; then
+		uci add_list dhcp.@dnsmasq[0].confdir="${SS_DNSMASQ_DIR}" || {
+			log_error "Failed to add dhcp.@dnsmasq[0].confdir=${SS_DNSMASQ_DIR}"
+			return 1
+		}
+		changed=1
+	fi
+
+	if [ "${changed}" -eq 1 ]; then
+		uci commit dhcp || {
+			log_error "Failed to commit dhcp config"
+			return 1
+		}
+
+		log_info "Restarting dnsmasq after updating confdir"
+		dnsmasq_restart || {
+			log_error "Failed to restart dnsmasq after configuring confdir"
+			return 1
+		}
+	fi
+
+	ss_check_dnsmasq_confdir || {
+		log_error "dnsmasq confdir verification failed after automatic setup"
+		return 1
+	}
+
+	return 0
+}
+
 safeshield_force_download() {
 	local section
 	local rc
@@ -99,9 +147,8 @@ safeshield_force_download() {
 	}
 	ss_status_set health_dnsmasq_binary "1"
 
-	ss_check_dnsmasq_confdir || {
-		log_error "dnsmasq confdir is not set to ${SS_DNSMASQ_DIR}"
-		log_error "Set: uci set dhcp.@dnsmasq[0].confdir='${SS_DNSMASQ_DIR}' && uci commit dhcp"
+	ss_ensure_dnsmasq_confdir || {
+		log_error "dnsmasq confdir could not be configured automatically for ${SS_DNSMASQ_DIR}"
 		ss_status_set health_dnsmasq_confdir "0"
 		ss_status_mark_failure "dnsmasq_confdir_not_set"
 		ss_refresh_lock_close
