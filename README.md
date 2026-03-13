@@ -1,8 +1,8 @@
 # SafeShield
 
-<p>
-    <a href="https://github.com/Beomjun/safeshield/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Beomjun/safeshield" alt="License"></a>
-</p>
+[![Lint](https://github.com/Beomjun/safeshield/actions/workflows/lint-shell.yml/badge.svg)](https://github.com/Beomjun/safeshield/actions/workflows/lint-shell.yml)
+![OpenWrt](https://img.shields.io/badge/OpenWrt-Compatible-blue)
+![License](https://img.shields.io/github/license/Beomjun/safeshield)
 
 A lightweight DNS-based ad blocker for OpenWrt, designed with a powerful, easy-to-use Web UI. Blocks ads and phishing sites, fully compatible with dnsmasq.
 
