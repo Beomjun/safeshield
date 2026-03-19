@@ -6,11 +6,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.2.3
-PKG_RELEASE:=7
+PKG_VERSION:=0.2.10
+PKG_RELEASE:=14
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
+PKG_LICENSE_FILES:=LICENSE
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -65,6 +66,7 @@ define Package/safeshield/postinst
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
 	/etc/init.d/safeshield enable >/dev/null 2>&1 || true
+	/etc/init.d/safeshield start >/dev/null 2>&1 || true
 
 	if [ -x /etc/init.d/rpcd ]; then
 		/etc/init.d/rpcd reload >/dev/null 2>&1 || \
