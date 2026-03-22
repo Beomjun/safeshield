@@ -14,7 +14,7 @@ USE_PROCD=1
 LC_ALL=C
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.2.10'
+readonly PKG_VERSION='0.2.11'
 
 if type extra_command >/dev/null 2>&1; then
 	extra_command 'delete_cache' 'Delete all cached files'

@@ -3,6 +3,35 @@
 # Variables below are populated by sourced helpers and ss_load_config()
 # shellcheck disable=SC2154
 
+readonly SS_STATUS_STORE='/usr/lib/safeshield/status-store.uc'
+
+ss_status_exec() {
+	ucode "${SS_STATUS_STORE}" "${RUNNING_STATUS_FILE}" "$@"
+}
+
+ss_status_apply() {
+	local tmp="${RUNNING_STATUS_FILE}.tmp"
+
+	mkdir -p "${RUNNING_STATUS_FILE%/*}" || return 1
+
+	ss_status_exec "$@" >"${tmp}" || {
+		rm -f "${tmp}"
+		return 1
+	}
+
+	[ -s "${tmp}" ] || {
+		rm -f "${tmp}"
+		return 1
+	}
+
+	mv -f "${tmp}" "${RUNNING_STATUS_FILE}" || {
+		rm -f "${tmp}"
+		return 1
+	}
+
+	return 0
+}
+
 is_enabled() {
 	uci_get "$1" 'config' 'enabled' '0'
 }
@@ -10,7 +39,7 @@ is_enabled() {
 is_active() {
 	local st
 
-	st="$(json get status)"
+	st="$(jsonfilter -i "${RUNNING_STATUS_FILE}" -e '@.data.status' 2>/dev/null)"
 
 	[ -n "$st" ] || return 1
 	[ "$st" = 'statusStopped' ] && return 1
@@ -82,6 +111,7 @@ ss_status_mark_failure() {
 }
 
 ss_status_mark_success() {
+	ss_status_apply clear_messages >/dev/null 2>&1 || true
 	ss_status_set status "ready"
 	ss_status_set stage "done"
 	ss_status_set_now last_success
@@ -90,19 +120,31 @@ ss_status_mark_success() {
 }
 
 ss_status_set() {
-	json set "$1" "$2" >/dev/null 2>&1 || true
+	local key="$1"
+	local value="$2"
+
+	[ -n "$key" ] || return 0
+	ss_status_apply set "$key" "$value" >/dev/null 2>&1 || true
 }
 
 ss_status_add_error() {
-	json add error "$1" >/dev/null 2>&1 || true
+	local code="$1"
+
+	[ -n "$code" ] || return 0
+	ss_status_apply add_error "$code" >/dev/null 2>&1 || true
 }
 
 ss_status_add_warning() {
-	json add warning "$1" >/dev/null 2>&1 || true
+	local code="$1"
+
+	[ -n "$code" ] || return 0
+	ss_status_apply add_warning "$code" >/dev/null 2>&1 || true
 }
 
 ss_status_reset() {
-	rm -f "${RUNNING_STATUS_FILE}"
+	rm -f "${RUNNING_STATUS_FILE}" "${RUNNING_STATUS_FILE}.tmp"
+
+	ss_status_apply reset >/dev/null 2>&1 || return 1
 
 	ss_status_set status "idle"
 	ss_status_set stage ""
@@ -117,6 +159,7 @@ ss_status_reset() {
 
 	ss_status_reset_health_fields
 	ss_status_reset_blocklist_fields
+	ss_status_apply clear_messages >/dev/null 2>&1 || true
 }
 
 ss_blocklist_tmp_path() {

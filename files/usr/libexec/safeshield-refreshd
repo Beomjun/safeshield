@@ -77,6 +77,9 @@ main() {
 	refreshd_lock || exit 0
 
 	ss_load_config || exit 1
+	ss_status_reset || true
+	ss_status_set status "idle"
+	ss_status_set stage "starting"
 
 	interval="$(ss_config_get config refresh_interval_s 21600)"
 	boot_delay="$(ss_config_get config boot_start_delay_s 30)"
@@ -88,39 +91,43 @@ main() {
 	is_valid_integer "$boot_delay" || boot_delay=30
 
 	wait_for_wan_if_needed
+	ss_status_set stage "boot_delay"
 	set_next_refresh_at "$boot_delay"
 	sleep_seconds "$boot_delay" || exit 0
 
 	if [ "$refresh_on_boot" = "1" ] && [ "${ss_enabled}" = "1" ]; then
-		log_info "Running boot refresh"
+		ss_status_set status "running"
+		ss_status_set stage "boot_refresh"
+		ss_status_set_now last_attempt
 		clear_next_refresh_at
 		safeshield_force_download
-		[ "$ss_should_terminate" -eq 1 ] && exit 0
 	fi
 
 	while :; do
+		ss_status_set status "idle"
+		ss_status_set stage "scheduled_wait"
 		set_next_refresh_at "$interval"
-		log_info "Next refresh scheduled in ${interval}s"
 		sleep_seconds "$interval" || break
-		[ "$ss_should_terminate" -eq 1 ] && break
 
 		ss_load_config || continue
 
 		if [ "${ss_enabled}" != "1" ]; then
-			log_info "Safeshield disabled, skipping scheduled refresh"
+			ss_status_set status "disabled"
+			ss_status_set stage "disabled"
 			continue
 		fi
 
-		wait_for_wan_if_needed
-		[ "$ss_should_terminate" -eq 1 ] && break
+		wait_for_wan_if_needed || true
 
-		log_info "Running scheduled refresh"
+		ss_status_set status "running"
+		ss_status_set stage "scheduled_refresh"
+		ss_status_set_now last_attempt
 		clear_next_refresh_at
 		safeshield_force_download
-		[ "$ss_should_terminate" -eq 1 ] && break
-		set_next_refresh_at "$interval"
 	done
 
+	ss_status_set status "idle"
+	ss_status_set stage "stopped"
 	clear_next_refresh_at
 }
 
