@@ -6,8 +6,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.2.11
-PKG_RELEASE:=15
+PKG_VERSION:=0.2.12
+PKG_RELEASE:=16
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -66,9 +66,30 @@ endef
 define Package/safeshield/postinst
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
+	mkdir -p /etc/safeshield
+	if [ ! -f /etc/safeshield/allowlist ]; then
+		cat << 'EOF' > /etc/safeshield/allowlist
+# SafeShield allowlist
+# Add domains to always allow (one per line)
+EOF
+	fi
+
+	# Create default blocklist if not exists
+	if [ ! -f /etc/safeshield/blocklist ]; then
+		cat << 'EOF' > /etc/safeshield/blocklist
+# SafeShield blocklist
+# Add domains to always block (one per line)
+EOF
+	fi
+
+	chmod 644 /etc/safeshield/allowlist
+	chmod 644 /etc/safeshield/blocklist
+
+	# Enable and start service
 	/etc/init.d/safeshield enable >/dev/null 2>&1 || true
 	/etc/init.d/safeshield start >/dev/null 2>&1 || true
 
+	# Reload rpcd for LuCI integration
 	if [ -x /etc/init.d/rpcd ]; then
 		/etc/init.d/rpcd reload >/dev/null 2>&1 || \
 		/etc/init.d/rpcd restart >/dev/null 2>&1 || true
