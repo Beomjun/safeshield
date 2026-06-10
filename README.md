@@ -1,8 +1,8 @@
 # SafeShield
 
-[![Lint](https://github.com/Beomjun/safeshield/actions/workflows/lint-shell.yml/badge.svg)](https://github.com/Beomjun/safeshield/actions/workflows/lint-shell.yml)
+[![Lint](https://github.com/Junatum/safeshield/actions/workflows/lint-shell.yml/badge.svg)](https://github.com/Junatum/safeshield/actions/workflows/lint-shell.yml)
 ![OpenWrt](https://img.shields.io/badge/OpenWrt-Compatible-blue)
-![License](https://img.shields.io/github/license/Beomjun/safeshield?label=License)
+![License](https://img.shields.io/github/license/Junatum/safeshield?label=License)
 
 A lightweight DNS-based ad blocker for OpenWrt, designed with a powerful, easy-to-use Web UI. Blocks ads and phishing sites, fully compatible with dnsmasq.
 
@@ -47,13 +47,13 @@ opkg print-architecture
 Add the repository:
 
 ```sh
-echo "src/gz smartsafehub https://beomjun.github.io/openwrt-packages/stable/packages/<architecture>/smartsafehub" >> /etc/opkg/customfeeds.conf
+echo "src/gz smartsafehub https://junatum.github.io/openwrt-packages/stable/packages/<architecture>/smartsafehub" >> /etc/opkg/customfeeds.conf
 ```
 
 Example (for `x86_64`):
 
 ```sh
-echo "src/gz smartsafehub https://beomjun.github.io/openwrt-packages/stable/packages/x86_64/smartsafehub" >> /etc/opkg/customfeeds.conf
+echo "src/gz smartsafehub https://junatum.github.io/openwrt-packages/stable/packages/x86_64/smartsafehub" >> /etc/opkg/customfeeds.conf
 ```
 
 Update package lists:
@@ -78,15 +78,15 @@ After installation, configure SafeShield via the LuCI interface under **LuCI →
 
 ## Contributors
 
-<a href="https://github.com/Beomjun/safeshield/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=Beomjun/safeshield" alt="Contributors">
+<a href="https://github.com/Junatum/safeshield/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=Junatum/safeshield" alt="Contributors">
 </a>
 
 ## Support
 
 If you encounter issues or have feature requests, please open an issue on GitHub:
 
-https://github.com/Beomjun/safeshield/issues
+https://github.com/Junatum/safeshield/issues
 
 Bug reports and pull requests are welcome.
 
