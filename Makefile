@@ -19,7 +19,7 @@ define Package/safeshield
   SECTION:=net
   CATEGORY:=Network
   TITLE:=SafeShield DNS Block Service
-  URL:=https://github.com/Beomjun/safeshield
+  URL:=https://github.com/Junatum/safeshield
   DEPENDS:=+jshn +uclient-fetch +dnsmasq +gzip +coreutils-sort +grep +sed +procd +rpcd +rpcd-mod-ucode +ucode +ucode-mod-fs +ucode-mod-ubus +ucode-mod-uci
   PKGARCH:=all
 endef
