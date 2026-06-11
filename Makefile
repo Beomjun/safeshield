@@ -6,11 +6,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.2.3
-PKG_RELEASE:=7
+PKG_VERSION:=0.2.12
+PKG_RELEASE:=16
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
+PKG_LICENSE_FILES:=LICENSE
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -55,6 +56,7 @@ define Package/safeshield/install
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/config.sh $(1)/usr/lib/safeshield/config.sh
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/dns.sh $(1)/usr/lib/safeshield/dns.sh
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/blocklist.sh $(1)/usr/lib/safeshield/blocklist.sh
+	$(INSTALL_DATA) ./files/usr/lib/safeshield/status-store.uc $(1)/usr/lib/safeshield/status-store.uc
 	echo '$(PKG_VERSION)-$(PKG_RELEASE)' > $(1)/usr/lib/safeshield/version
 
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/ucode
@@ -64,8 +66,30 @@ endef
 define Package/safeshield/postinst
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
-	/etc/init.d/safeshield enable >/dev/null 2>&1 || true
+	mkdir -p /etc/safeshield
+	if [ ! -f /etc/safeshield/allowlist ]; then
+		cat << 'EOF' > /etc/safeshield/allowlist
+# SafeShield allowlist
+# Add domains to always allow (one per line)
+EOF
+	fi
 
+	# Create default blocklist if not exists
+	if [ ! -f /etc/safeshield/blocklist ]; then
+		cat << 'EOF' > /etc/safeshield/blocklist
+# SafeShield blocklist
+# Add domains to always block (one per line)
+EOF
+	fi
+
+	chmod 644 /etc/safeshield/allowlist
+	chmod 644 /etc/safeshield/blocklist
+
+	# Enable and start service
+	/etc/init.d/safeshield enable >/dev/null 2>&1 || true
+	/etc/init.d/safeshield start >/dev/null 2>&1 || true
+
+	# Reload rpcd for LuCI integration
 	if [ -x /etc/init.d/rpcd ]; then
 		/etc/init.d/rpcd reload >/dev/null 2>&1 || \
 		/etc/init.d/rpcd restart >/dev/null 2>&1 || true
