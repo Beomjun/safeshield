@@ -6,8 +6,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.2.12
-PKG_RELEASE:=16
+PKG_VERSION:=0.3.0
+PKG_RELEASE:=17
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later

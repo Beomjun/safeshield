@@ -9,17 +9,21 @@ ss_dns="dnsmasq.conf"
 ss_dnsmasq_instance="*"
 ss_local_allowlist_path="/etc/safeshield/allowlist"
 ss_local_blocklist_path="/etc/safeshield/blocklist"
-ss_min_blocklist_file_part_line_count="1"
-ss_max_blocklist_file_part_size_kb="20000"
+ss_api_base_url="https://www.smartsafehub.com"
+ss_api_resolve_path="/api/v1/licenses/resolve"
+ss_license_key=""
+ss_device_fingerprint=""
+ss_device_vendor=""
+ss_device_model=""
+ss_device_arch=""
+ss_device_memory_mb=""
+ss_apply_local_overrides="1"
 ss_max_blocklist_file_size_kb="30000"
-ss_min_valid_line_count="100000"
+ss_min_valid_line_count="3000"
 ss_compress_blocklist="0"
 ss_initial_dnsmasq_restart="0"
-ss_rogue_element_action="SKIP_PARTIAL"
-ss_download_failed_action="SKIP_PARTIAL"
 ss_download_timeout="10"
 ss_download_retry="3"
-ss_parallel_downloads="0"
 ss_pause_timeout="20"
 ss_boot_start_delay_s="30"
 ss_dnsmasq_sanity_check="1"
@@ -82,16 +86,15 @@ ss_validate_int() {
 ss_validate_config() {
 	ss_validate_int ss_download_timeout 10 invalid_download_timeout
 	ss_validate_int ss_download_retry 3 invalid_download_retry
-	ss_validate_int ss_min_blocklist_file_part_line_count 1 invalid_min_blocklist_file_part_line_count
-	ss_validate_int ss_max_blocklist_file_part_size_kb 20000 invalid_max_blocklist_file_part_size_kb
 	ss_validate_int ss_max_blocklist_file_size_kb 30000 invalid_max_blocklist_file_size_kb
-	ss_validate_int ss_min_valid_line_count 100000 invalid_min_valid_line_count
+	ss_validate_int ss_min_valid_line_count 3000 invalid_min_valid_line_count
 	ss_validate_int ss_pause_timeout 20 invalid_pause_timeout
 	ss_validate_int ss_boot_start_delay_s 30 invalid_boot_start_delay_s
 
 	ss_validate_bool ss_compress_blocklist 0 invalid_compress_blocklist
 	ss_validate_bool ss_initial_dnsmasq_restart 0 invalid_initial_dnsmasq_restart
 	ss_validate_bool ss_dnsmasq_sanity_check 1 invalid_dnsmasq_sanity_check
+	ss_validate_bool ss_apply_local_overrides 1 invalid_apply_local_overrides
 }
 
 ss_load_config() {
@@ -103,17 +106,21 @@ ss_load_config() {
 	ss_dnsmasq_instance="$(ss_config_get config dnsmasq_instance '*')"
 	ss_local_allowlist_path="$(ss_config_get config local_allowlist_path /etc/safeshield/allowlist)"
 	ss_local_blocklist_path="$(ss_config_get config local_blocklist_path /etc/safeshield/blocklist)"
-	ss_min_blocklist_file_part_line_count="$(ss_config_get config min_blocklist_file_part_line_count 1)"
-	ss_max_blocklist_file_part_size_kb="$(ss_config_get config max_blocklist_file_part_size_kb 20000)"
+	ss_api_base_url="$(ss_config_get config api_base_url https://www.smartsafehub.com)"
+	ss_api_resolve_path="$(ss_config_get config api_resolve_path /api/v1/licenses/resolve)"
+	ss_license_key="$(ss_config_get config license_key '')"
+	ss_device_fingerprint="$(ss_config_get config device_fingerprint '')"
+	ss_device_vendor="$(ss_config_get config device_vendor '')"
+	ss_device_model="$(ss_config_get config device_model '')"
+	ss_device_arch="$(ss_config_get config device_arch '')"
+	ss_device_memory_mb="$(ss_config_get config device_memory_mb '')"
+	ss_apply_local_overrides="$(ss_config_get config apply_local_overrides 1)"
 	ss_max_blocklist_file_size_kb="$(ss_config_get config max_blocklist_file_size_kb 30000)"
-	ss_min_valid_line_count="$(ss_config_get config min_valid_line_count 100000)"
+	ss_min_valid_line_count="$(ss_config_get config min_valid_line_count 3000)"
 	ss_compress_blocklist="$(ss_config_get config compress_blocklist 0)"
 	ss_initial_dnsmasq_restart="$(ss_config_get config initial_dnsmasq_restart 0)"
-	ss_rogue_element_action="$(ss_config_get config rogue_element_action SKIP_PARTIAL)"
-	ss_download_failed_action="$(ss_config_get config download_failed_action SKIP_PARTIAL)"
 	ss_download_timeout="$(ss_config_get config download_timeout 10)"
 	ss_download_retry="$(ss_config_get config download_retry 3)"
-	ss_parallel_downloads="$(ss_config_get config parallel_downloads 0)"
 	ss_pause_timeout="$(ss_config_get config pause_timeout 20)"
 	ss_boot_start_delay_s="$(ss_config_get config boot_start_delay_s 30)"
 	ss_dnsmasq_sanity_check="$(ss_config_get config dnsmasq_sanity_check 1)"

@@ -3,41 +3,37 @@ config safeshield 'config'
 	option verbosity '2'
 	option dns 'dnsmasq.conf'
 	option dnsmasq_instance '*'
+
+	# Hub API
+	option api_base_url 'https://www.smartsafehub.com'
+	option api_resolve_path '/api/v1/licenses/resolve'
+	option license_key 'LIC-XXXX'
+
+	# Device identity / profile
+	option device_fingerprint ''
+	option device_vendor 'ipTIME'
+	option device_model 'AX3000SM'
+	option device_arch 'aarch64_cortex-a53'
+	option device_memory_mb '256'
+
+	# Local overrides
+	option apply_local_overrides '1'
 	option local_allowlist_path '/etc/safeshield/allowlist'
 	option local_blocklist_path '/etc/safeshield/blocklist'
-	option min_blocklist_file_part_line_count '1'
-	option max_blocklist_file_part_size_kb '20000'
+
+	# Artifact validation / installation
 	option max_blocklist_file_size_kb '30000'
-	option min_valid_line_count '100000'
+	option min_valid_line_count '3000'
 	option compress_blocklist '0'
 	option initial_dnsmasq_restart '0'
-	option rogue_element_action 'SKIP_PARTIAL'
-	option download_failed_action 'SKIP_PARTIAL'
+	option dnsmasq_sanity_check '1'
+
+	# Download / refresh runtime
 	option download_timeout '10'
 	option download_retry '3'
-	option parallel_downloads '0'
 	option pause_timeout '20'
 	option boot_start_delay_s '30'
-	option dnsmasq_sanity_check '1'
-	option debug '0'
 	option refresh_on_boot '1'
 	option refresh_interval_s '82800'
 	option require_wan '1'
-
-config file_url
-	option name 'HaGeZi Pro'
-	option url 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/dnsmasq/pro.txt'
-	option action 'block'
-	option enabled '1'
-
-config file_url
-	option name 'StevenBlack Hosts'
-	option url 'https://cdn.jsdelivr.net/gh/StevenBlack/hosts/hosts'
-	option action 'block'
-	option enabled '0'
-
-config file_url
-	option name 'Local allowlist overlay'
-	option url ''
-	option action 'allow'
-	option enabled '0'
+	option debug '0'

@@ -24,6 +24,11 @@
 readonly SS_TMP_DIR="/tmp/safeshield"
 readonly SS_DNSMASQ_DIR="/tmp/dnsmasq.d"
 readonly SS_BLOCKLIST_FILE="${SS_DNSMASQ_DIR}/safeshield.blocklist"
+readonly SS_DEVICE_ID_FILE="/etc/safeshield/device-id"
+readonly SS_API_PAYLOAD="${SS_TMP_DIR}/resolve-request.json"
+readonly SS_API_RESPONSE="${SS_TMP_DIR}/resolve-response.json"
+readonly SS_ARTIFACT_RAW="${SS_TMP_DIR}/artifact.blocklist.raw"
+readonly SS_ARTIFACT_DOMAINS="${SS_TMP_DIR}/api.block.txt"
 readonly SS_PREV_BLOCKLIST_GZ="/tmp/safeshield.prev.blocklist.gz"
 readonly SS_RUNTIME_OUT="${SS_TMP_DIR}/runtime.out"
 readonly SS_REFRESH_LOCK='/var/lock/safeshield-refresh.lock'
@@ -97,7 +102,6 @@ ss_ensure_dnsmasq_confdir() {
 }
 
 safeshield_force_download() {
-	local section
 	local rc
 
 	if ! ss_refresh_lock_open; then
@@ -191,42 +195,59 @@ safeshield_force_download() {
 		return $?
 	fi
 
-	ss_status_set stage "prepare"
-	ss_build_local_allowlist
-	ss_build_local_blocklist
+	ss_status_set stage "resolve_api"
+	ss_resolve_artifact
+	rc=$?
+	case "$rc" in
+		0) ;;
+		130)
+			ss_abort_refresh
+			return $?
+			;;
+		*)
+			ss_status_mark_failure "api_resolve_failed"
+			ss_restore_and_restart
+			ss_refresh_lock_close
+			return 1
+			;;
+	esac
 
 	if ss_should_stop; then
 		ss_abort_refresh
 		return $?
 	fi
 
-	ss_status_set stage "download"
-	for section in $ss_file_url_sections; do
-		ss_download_source "$section"
-		rc=$?
-
-		case "$rc" in
-			0) ;;
-			130)
-				ss_abort_refresh
-				return $?
-				;;
-			*)
-				log_error "Aborting because a required list failed"
-				ss_status_mark_failure "required_list_failed"
-				ss_restore_and_restart
-				ss_refresh_lock_close
-				return 1
-				;;
-		esac
-	done
+	ss_status_set stage "download_artifact"
+	ss_download_api_artifact
+	rc=$?
+	case "$rc" in
+		0) ;;
+		130)
+			ss_abort_refresh
+			return $?
+			;;
+		*)
+			ss_status_mark_failure "artifact_download_failed"
+			ss_restore_and_restart
+			ss_refresh_lock_close
+			return 1
+			;;
+	esac
 
 	if ss_should_stop; then
 		ss_abort_refresh
 		return $?
 	fi
 
-	ss_status_set stage "allowlist"
+	ss_status_set stage "local_overrides"
+	if [ "$ss_apply_local_overrides" = "1" ]; then
+		ss_build_local_allowlist
+		ss_build_local_blocklist
+	else
+		: >"${SS_TMP_DIR}/local.allow.txt"
+		: >"${SS_TMP_DIR}/local.block.txt"
+	fi
+
 	ss_build_allowlist || {
 		log_error "Failed to build allowlist"
 		ss_status_mark_failure "allowlist_build_failed"
@@ -250,7 +271,7 @@ safeshield_force_download() {
 			return $?
 			;;
 		*)
-			log_error "Failed to merge lists"
+			log_error "Failed to merge API artifact with local overrides"
 			ss_status_mark_failure "merge_failed"
 			ss_restore_and_restart
 			ss_refresh_lock_close

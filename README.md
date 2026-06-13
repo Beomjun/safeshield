@@ -29,7 +29,7 @@ providing DNS-level protection against ads, trackers, and phishing domains.
 
 SafeShield requires the following environment:
 
-- **OpenWrt 24.10 or later**
+- **OpenWrt 25.12 or later**
 - **dnsmasq** (default DNS server in OpenWrt)
 - At least **16 MB free flash storage**
 - Internet access for downloading blocklists

@@ -87,6 +87,9 @@ ss_status_reset_health_fields() {
 	ss_status_set health_blocklist_verify ""
 	ss_status_set health_min_valid_line_count ""
 	ss_status_set health_max_file_size ""
+	ss_status_set health_api_resolve ""
+	ss_status_set health_artifact_download ""
+	ss_status_set health_artifact_sha256 ""
 }
 
 ss_status_reset_blocklist_fields() {
@@ -98,6 +101,21 @@ ss_status_reset_blocklist_fields() {
 	ss_status_set blocklist_test_domain_success_count "0"
 	ss_status_set blocklist_test_domains ""
 	ss_status_set blocklist_backup_available "0"
+}
+
+ss_status_reset_artifact_fields() {
+	ss_status_set api_base_url ""
+	ss_status_set api_resolve_url ""
+	ss_status_set license_plan ""
+	ss_status_set license_status ""
+	ss_status_set device_fingerprint ""
+	ss_status_set device_profile ""
+	ss_status_set artifact_tier ""
+	ss_status_set artifact_version ""
+	ss_status_set artifact_sha256 ""
+	ss_status_set artifact_unique_domains "0"
+	ss_status_set artifact_rules "0"
+	ss_status_set artifact_download_url_present "0"
 }
 
 ss_status_mark_failure() {
@@ -159,6 +177,7 @@ ss_status_reset() {
 
 	ss_status_reset_health_fields
 	ss_status_reset_blocklist_fields
+	ss_status_reset_artifact_fields
 	ss_status_apply clear_messages >/dev/null 2>&1 || true
 }
 
