@@ -4,9 +4,7 @@ config safeshield 'config'
 	option dns 'dnsmasq.conf'
 	option dnsmasq_instance '*'
 
-	# Hub API
-	option api_base_url 'https://www.smartsafehub.com'
-	option api_resolve_path '/api/v1/licenses/resolve'
+	# License
 	option license_key 'LIC-XXXX'
 
 	# Device identity / profile

@@ -9,8 +9,6 @@ const STATUS_FILE = `/dev/shm/${PKG_NAME}.status.json`;
 const BLOCKLIST_FILE = '/tmp/dnsmasq.d/safeshield.blocklist';
 const SCHEMA_NAME = 'safeshield.status';
 const SCHEMA_VERSION = 1;
-const DEFAULT_API_BASE_URL = 'https://www.smartsafehub.com';
-const DEFAULT_API_RESOLVE_PATH = '/api/v1/licenses/resolve';
 
 function trim(s) {
     return replace(s, /^[\r\n\t ]+|[\r\n\t ]+$/, '');
@@ -126,19 +124,6 @@ function mask_secret(v) {
     return sprintf('%s...%s', substr(s, 0, 4), substr(s, n - 4));
 }
 
-function normalize_api_resolve_url(base, path) {
-    base = sprintf('%s', base || DEFAULT_API_BASE_URL);
-    path = sprintf('%s', path || DEFAULT_API_RESOLVE_PATH);
-
-    base = replace(base, /\/+$/, '');
-
-    if (substr(path, 0, 1) != '/') {
-        path = `/${path}`;
-    }
-
-    return `${base}${path}`;
-}
-
 function service_running(name) {
     let r = ubus.call('service', 'list', { name: name });
     if (!r || !r[name] || !r[name].instances) {
@@ -169,7 +154,7 @@ function dnsmasq_running() {
     return false;
 }
 
-function build_api_source(data, enabled, api_base_url, api_resolve_url, license_key) {
+function build_api_source(data, enabled, license_key) {
     let api_resolve_ok = to_optional_bool(data.health_api_resolve);
     let artifact_download_ok = to_optional_bool(data.health_artifact_download);
     let last_result = data.last_result || '';
@@ -198,8 +183,6 @@ function build_api_source(data, enabled, api_base_url, api_resolve_url, license_
         name: 'SmartSafeHub API Artifact',
         action: 'block',
         enabled: enabled && !!license_key,
-        url: api_resolve_url,
-        api_base_url: api_base_url,
         last_result: last_result,
         line_count: to_int(data.artifact_unique_domains || data.valid_line_count || 0, 0),
         size_kb: to_int(data.blocklist_file_size_kb || 0, 0),
@@ -278,9 +261,6 @@ function build_status() {
     let refresh_interval_s = to_int(cfg('refresh_interval_s', '21600'), 21600);
     let boot_start_delay_s = to_int(cfg('boot_start_delay_s', '30'), 30);
 
-    let api_base_url = cfg('api_base_url', DEFAULT_API_BASE_URL);
-    let api_resolve_path = cfg('api_resolve_path', DEFAULT_API_RESOLVE_PATH);
-    let api_resolve_url = data.api_resolve_url || normalize_api_resolve_url(api_base_url, api_resolve_path);
     let license_key = cfg('license_key', '');
     let license_configured = !!license_key;
     let apply_local_overrides = to_bool(cfg('apply_local_overrides', '1'), true);
@@ -337,7 +317,7 @@ function build_status() {
     let health_artifact_download = to_optional_bool(data.health_artifact_download);
     let health_artifact_sha256 = to_optional_bool(data.health_artifact_sha256);
 
-    let hub_source = build_api_source(data, enabled, api_base_url, api_resolve_url, license_key);
+    let hub_source = build_api_source(data, enabled, license_key);
     let installed = blocklist_installed || file_exists(BLOCKLIST_FILE);
     let refreshd_running = service_running(PKG_NAME);
     let dns_running = dnsmasq_running();
@@ -375,18 +355,6 @@ function build_status() {
             last_result: last_result,
             last_error_code: last_error_code
         },
-
-        api: {
-            mode: 'hub_artifact',
-            base_url: api_base_url,
-            resolve_path: api_resolve_path,
-            resolve_url: api_resolve_url,
-            configured: !!api_base_url && !!api_resolve_path && license_configured,
-            license_configured: license_configured,
-            license_key_masked: mask_secret(license_key),
-            download_url_present: artifact_download_url_present
-        },
-
         license: {
             configured: license_configured,
             key_masked: mask_secret(license_key),

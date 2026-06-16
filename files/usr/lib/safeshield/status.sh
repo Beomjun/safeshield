@@ -104,8 +104,6 @@ ss_status_reset_blocklist_fields() {
 }
 
 ss_status_reset_artifact_fields() {
-	ss_status_set api_base_url ""
-	ss_status_set api_resolve_url ""
 	ss_status_set license_plan ""
 	ss_status_set license_status ""
 	ss_status_set device_fingerprint ""

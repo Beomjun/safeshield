@@ -41,18 +41,6 @@ ss_json_get_file() {
 	jsonfilter -i "$file" -e "$expr" 2>/dev/null | head -n 1
 }
 
-ss_api_resolve_url() {
-	local base="${ss_api_base_url%/}"
-	local path="$ss_api_resolve_path"
-
-	case "$path" in
-		/*) ;;
-		*) path="/${path}" ;;
-	esac
-
-	printf '%s%s' "$base" "$path"
-}
-
 ss_detect_device_model() {
 	local value
 
@@ -266,12 +254,10 @@ ss_resolve_artifact() {
 		return 1
 	fi
 
-	url="$(ss_api_resolve_url)"
+	url='https://www.smartsafehub.com/api/v1/licenses/resolve'
 	payload="$SS_API_PAYLOAD"
 	response="$SS_API_RESPONSE"
 
-	ss_status_set api_base_url "$ss_api_base_url"
-	ss_status_set api_resolve_url "$url"
 	ss_status_set artifact_download_url_present "0"
 
 	ss_write_resolve_payload "$payload" || return 1

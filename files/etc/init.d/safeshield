@@ -14,7 +14,7 @@ USE_PROCD=1
 LC_ALL=C
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.3.0'
+readonly PKG_VERSION='0.3.1'
 
 if type extra_command >/dev/null 2>&1; then
 	extra_command 'delete_cache' 'Delete all cached files'
@@ -23,7 +23,7 @@ if type extra_command >/dev/null 2>&1; then
 	extra_command 'refresh_once' 'Run one immediate refresh in foreground'
 	extra_command 'resume' 'Resume the service'
 	extra_command 'show_blocklist' 'List currently blocked domains'
-	extra_command 'sizes' 'Display Hub artifact API configuration'
+	extra_command 'sizes' 'Display SafeShield blocklist size information'
 	extra_command 'version' 'Show version information'
 fi
 
@@ -87,7 +87,7 @@ service_triggers() {
 status_service() {
 	local status stage valid_line_count
 	local enabled refresh_interval_s refresh_on_boot require_wan boot_delay
-	local api_base_url api_resolve_path license_key artifact_tier artifact_version license_plan device_profile
+	local license_key artifact_tier artifact_version license_plan device_profile
 
 	if ! ss_load_config >/dev/null 2>&1; then
 		printf '%s\n' 'config: load failed'
@@ -98,8 +98,6 @@ status_service() {
 	refresh_on_boot="$(ss_config_get config refresh_on_boot 1)"
 	require_wan="$(ss_config_get config require_wan 1)"
 	boot_delay="$(ss_config_get config boot_start_delay_s 30)"
-	api_base_url="$(ss_config_get config api_base_url https://www.smartsafehub.com)"
-	api_resolve_path="$(ss_config_get config api_resolve_path /api/v1/licenses/resolve)"
 	license_key="$(ss_config_get config license_key '')"
 
 	status=""
@@ -124,8 +122,6 @@ status_service() {
 	printf 'refresh_on_boot: %s\n' "$refresh_on_boot"
 	printf 'require_wan: %s\n' "$require_wan"
 	printf 'boot_start_delay_s: %s\n' "$boot_delay"
-	printf 'api_base_url: %s\n' "$api_base_url"
-	printf 'api_resolve_path: %s\n' "$api_resolve_path"
 	printf 'license_key: %s\n' "$(ss_mask_secret "$license_key")"
 
 	if [ -f "${SS_BLOCKLIST_FILE}" ]; then
@@ -212,12 +208,32 @@ show_blocklist() {
 }
 
 sizes() {
+	local blocklist_file_size_kb backup_file_size_kb valid_line_count
+
 	ss_load_config || return 1
 
-	printf 'api_base_url: %s\n' "$ss_api_base_url"
-	printf 'api_resolve_path: %s\n' "$ss_api_resolve_path"
-	printf 'resolve_url: %s\n' "$(ss_api_resolve_url)"
-	printf 'license_key: %s\n' "$(ss_mask_secret "$ss_license_key")"
+	blocklist_file_size_kb="0"
+	backup_file_size_kb="0"
+	valid_line_count="0"
+
+	if [ -f "${SS_BLOCKLIST_FILE}" ]; then
+		blocklist_file_size_kb="$(du -k "${SS_BLOCKLIST_FILE}" 2>/dev/null | awk '{print $1}')"
+		valid_line_count="$(grep -c . "${SS_BLOCKLIST_FILE}" 2>/dev/null)"
+	fi
+
+	if [ -f "${SS_PREV_BLOCKLIST_GZ}" ]; then
+		backup_file_size_kb="$(du -k "${SS_PREV_BLOCKLIST_GZ}" 2>/dev/null | awk '{print $1}')"
+	fi
+
+	[ -n "$blocklist_file_size_kb" ] || blocklist_file_size_kb="0"
+	[ -n "$backup_file_size_kb" ] || backup_file_size_kb="0"
+	[ -n "$valid_line_count" ] || valid_line_count="0"
+
+	printf 'max_blocklist_file_size_kb: %s\n' "$ss_max_blocklist_file_size_kb"
+	printf 'min_valid_line_count: %s\n' "$ss_min_valid_line_count"
+	printf 'blocklist_file_size_kb: %s\n' "$blocklist_file_size_kb"
+	printf 'backup_blocklist_file_size_kb: %s\n' "$backup_file_size_kb"
+	printf 'valid_line_count: %s\n' "$valid_line_count"
 }
 
 version() {
