@@ -76,6 +76,152 @@ opkg install luci-app-safeshield
 
 After installation, configure SafeShield via the LuCI interface under **LuCI → Services → SafeShield**.
 
+## Build from source
+
+SafeShield is built as an OpenWrt package. Build it inside an OpenWrt buildroot or SDK that matches your target device and OpenWrt version.
+
+### Build with OpenWrt buildroot
+
+Clone OpenWrt and prepare feeds:
+
+```sh
+git clone -b production https://github.com/Junatum/openwrt.git
+cd openwrt
+
+./scripts/feeds update -a
+./scripts/feeds install -a
+```
+
+Add SafeShield under the OpenWrt `package/` directory:
+
+```sh
+git clone https://github.com/Junatum/safeshield package/safeshield
+```
+
+If you also want to build the LuCI web interface, add
+`luci-app-safeshield` as well:
+
+```sh
+git clone https://github.com/Junatum/luci-app-safeshield package/luci-app-safeshield
+```
+
+Select your target device:
+
+```sh
+make menuconfig
+```
+
+For example, for MediaTek Filogic devices such as ipTIME AX3000SM:
+
+```text
+Target System  ---> MediaTek Ralink ARM
+Subtarget      ---> Filogic 8x0
+Target Profile ---> your device profile
+```
+
+Enable SafeShield as a module:
+
+```sh
+cat >> .config <<'EOF'
+CONFIG_PACKAGE_safeshield=m
+CONFIG_PACKAGE_luci-app-safeshield=m
+EOF
+
+make defconfig
+```
+
+Build the packages:
+
+```sh
+make package/safeshield/clean V=s
+make package/safeshield/compile V=s
+
+make package/luci-app-safeshield/clean V=s
+make package/luci-app-safeshield/compile V=s
+```
+
+Find the generated packages:
+
+```sh
+find bin -type f \( \
+  -name 'safeshield*.apk' \
+  -o -name 'luci-app-safeshield*.apk' \
+\) -print
+```
+
+Depending on the OpenWrt version and package location, the output can appear
+under one of these paths:
+
+```text
+bin/targets/<target>/<subtarget>/packages/
+bin/packages/<architecture>/<feed-name>/
+```
+
+For example, a MediaTek Filogic `apk` build may generate packages under:
+
+```text
+bin/targets/mediatek/filogic/packages/
+```
+
+### Build with OpenWrt SDK
+
+You can also build SafeShield with the OpenWrt SDK for your target. This is
+faster when you only need package artifacts.
+
+```sh
+tar xf openwrt-sdk-*.tar.*
+cd openwrt-sdk-*
+
+./scripts/feeds update -a
+./scripts/feeds install -a
+
+git clone https://github.com/Junatum/safeshield package/safeshield
+git clone https://github.com/Junatum/luci-app-safeshield package/luci-app-safeshield
+
+cat >> .config <<'EOF'
+CONFIG_PACKAGE_safeshield=m
+CONFIG_PACKAGE_luci-app-safeshield=m
+EOF
+
+make defconfig
+
+make package/safeshield/compile V=s
+make package/luci-app-safeshield/compile V=s
+```
+
+### Install local build artifacts
+
+For OpenWrt `apk` based builds, copy the generated artifacts to the
+device:
+
+```sh
+find bin -type f \( -name 'safeshield-*.apk' -o -name 'luci-app-safeshield-*.apk' \) -print
+
+scp path/to/safeshield-*.apk root@192.168.1.1:/tmp/
+scp path/to/luci-app-safeshield-*.apk root@192.168.1.1:/tmp/
+```
+
+Install them on the device:
+
+```sh
+ssh root@192.168.1.1
+
+apk add --allow-untrusted /tmp/safeshield-*.apk
+apk add --allow-untrusted /tmp/luci-app-safeshield-*.apk
+
+/etc/init.d/rpcd restart
+/etc/init.d/uhttpd restart
+/etc/init.d/safeshield restart
+```
+
+Verify the installation:
+
+```sh
+ubus call safeshield status
+/etc/init.d/safeshield status
+logread | grep -i safeshield
+```
+
 ## Contributors
 
 <a href="https://github.com/Junatum/safeshield/graphs/contributors">
