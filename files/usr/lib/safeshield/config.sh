@@ -5,10 +5,6 @@
 
 ss_enabled="0"
 ss_verbosity="2"
-ss_dns="dnsmasq.conf"
-ss_dnsmasq_instance="*"
-ss_local_allowlist_path="/etc/safeshield/allowlist"
-ss_local_blocklist_path="/etc/safeshield/blocklist"
 ss_license_key=""
 ss_device_vendor=""
 ss_device_model=""
@@ -99,10 +95,6 @@ ss_load_config() {
 
 	ss_enabled="$(ss_config_get config enabled 0)"
 	ss_verbosity="$(ss_config_get config verbosity 2)"
-	ss_dns="$(ss_config_get config dns dnsmasq.conf)"
-	ss_dnsmasq_instance="$(ss_config_get config dnsmasq_instance '*')"
-	ss_local_allowlist_path="$(ss_config_get config local_allowlist_path /etc/safeshield/allowlist)"
-	ss_local_blocklist_path="$(ss_config_get config local_blocklist_path /etc/safeshield/blocklist)"
 	ss_license_key="$(ss_config_get config license_key '')"
 	ss_device_vendor="$(ss_config_get config device_vendor '')"
 	ss_device_model="$(ss_config_get config device_model '')"

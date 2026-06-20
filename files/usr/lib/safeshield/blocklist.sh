@@ -525,8 +525,8 @@ ss_build_local_allowlist() {
 
 	: >"$out"
 
-	if [ -f "${ss_local_allowlist_path}" ]; then
-		ss_normalize_domains <"${ss_local_allowlist_path}" |
+	if [ -f "${SS_LOCAL_ALLOWLIST_FILE}" ]; then
+		ss_normalize_domains <"${SS_LOCAL_ALLOWLIST_FILE}" |
 			ss_filter_valid_domains |
 			sort -u >>"$out"
 	fi
@@ -537,8 +537,8 @@ ss_build_local_blocklist() {
 
 	: >"$out"
 
-	if [ -f "${ss_local_blocklist_path}" ]; then
-		ss_normalize_domains <"${ss_local_blocklist_path}" |
+	if [ -f "${SS_LOCAL_BLOCKLIST_FILE}" ]; then
+		ss_normalize_domains <"${SS_LOCAL_BLOCKLIST_FILE}" |
 			ss_filter_valid_domains |
 			sort -u >>"$out"
 	fi

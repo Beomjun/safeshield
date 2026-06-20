@@ -1,8 +1,6 @@
 config safeshield 'config'
 	option enabled '1'
 	option verbosity '2'
-	option dns 'dnsmasq.conf'
-	option dnsmasq_instance '*'
 
 	# License
 	option license_key 'LIC-XXXX'
@@ -15,8 +13,6 @@ config safeshield 'config'
 
 	# Local overrides
 	option apply_local_overrides '1'
-	option local_allowlist_path '/etc/safeshield/allowlist'
-	option local_blocklist_path '/etc/safeshield/blocklist'
 
 	# Artifact validation / installation
 	option max_blocklist_file_size_kb '30000'

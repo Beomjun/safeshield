@@ -26,6 +26,8 @@
 readonly SS_TMP_DIR="/tmp/safeshield"
 readonly SS_DNSMASQ_DIR="/tmp/dnsmasq.d"
 readonly SS_BLOCKLIST_FILE="${SS_DNSMASQ_DIR}/safeshield.blocklist"
+readonly SS_LOCAL_ALLOWLIST_FILE="/etc/safeshield/allowlist"
+readonly SS_LOCAL_BLOCKLIST_FILE="/etc/safeshield/blocklist"
 readonly SS_IDENTITY_DIR="/etc/safeshield"
 readonly SS_IDENTITY_FILE="${SS_IDENTITY_DIR}/identity.env"
 readonly SS_API_PAYLOAD="${SS_TMP_DIR}/resolve-request.json"
