@@ -17,6 +17,8 @@
 # shellcheck disable=SC1091
 . "${IPKG_INSTROOT}/usr/lib/safeshield/config.sh"
 # shellcheck disable=SC1091
+. "${IPKG_INSTROOT}/usr/lib/safeshield/identity.sh"
+# shellcheck disable=SC1091
 . "${IPKG_INSTROOT}/usr/lib/safeshield/dns.sh"
 # shellcheck disable=SC1091
 . "${IPKG_INSTROOT}/usr/lib/safeshield/blocklist.sh"
@@ -24,7 +26,8 @@
 readonly SS_TMP_DIR="/tmp/safeshield"
 readonly SS_DNSMASQ_DIR="/tmp/dnsmasq.d"
 readonly SS_BLOCKLIST_FILE="${SS_DNSMASQ_DIR}/safeshield.blocklist"
-readonly SS_DEVICE_ID_FILE="/etc/safeshield/device-id"
+readonly SS_IDENTITY_DIR="/etc/safeshield"
+readonly SS_IDENTITY_FILE="${SS_IDENTITY_DIR}/identity.env"
 readonly SS_API_PAYLOAD="${SS_TMP_DIR}/resolve-request.json"
 readonly SS_API_RESPONSE="${SS_TMP_DIR}/resolve-response.json"
 readonly SS_ARTIFACT_RAW="${SS_TMP_DIR}/artifact.blocklist.raw"
@@ -118,6 +121,14 @@ safeshield_force_download() {
 
 	ss_load_config || {
 		ss_status_mark_failure "config_load_failed"
+		ss_refresh_lock_close
+		return 1
+	}
+
+	ss_sync_detected_device_config || true
+
+	ss_identity_ensure "$(ss_detect_device_model 2>/dev/null || echo OpenWrt)" "$(ss_detect_device_arch 2>/dev/null || echo unknown)" || {
+		ss_status_mark_failure "identity_init_failed"
 		ss_refresh_lock_close
 		return 1
 	}

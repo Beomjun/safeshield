@@ -105,6 +105,44 @@ ss_detect_device_memory_mb() {
 	printf '%s' "$value"
 }
 
+ss_config_fill_if_empty() {
+	local option="$1"
+	local value="$2"
+	local current=""
+
+	[ -n "$option" ] || return 1
+	[ -n "$value" ] || return 1
+
+	current="$(uci -q get "safeshield.config.${option}" 2>/dev/null || true)"
+	[ -n "$current" ] && return 1
+
+	uci -q set "safeshield.config.${option}=${value}" || return 1
+	return 0
+}
+
+ss_sync_detected_device_config() {
+	local model vendor arch memory changed=0
+
+	model="$(ss_detect_device_model)"
+	vendor="$(ss_detect_device_vendor "$model")"
+	arch="$(ss_detect_device_arch)"
+	memory="$(ss_detect_device_memory_mb)"
+
+	is_valid_integer "$memory" || memory=""
+
+	ss_config_fill_if_empty device_vendor "$vendor" && changed=1
+	ss_config_fill_if_empty device_model "$model" && changed=1
+	ss_config_fill_if_empty device_arch "$arch" && changed=1
+	ss_config_fill_if_empty device_memory_mb "$memory" && changed=1
+
+	if [ "$changed" -eq 1 ]; then
+		uci -q commit safeshield || return 1
+		log_info "Detected device metadata saved to UCI config"
+	fi
+
+	return 0
+}
+
 ss_detect_primary_mac() {
 	local iface mac
 
@@ -122,57 +160,52 @@ ss_detect_primary_mac() {
 	ip link 2>/dev/null | awk '/link\/ether/ { print $2; exit }'
 }
 
-ss_get_or_create_device_fingerprint() {
+ss_get_or_create_physical_fingerprint() {
 	local model="$1"
 	local arch="$2"
-	local mac value material
 
-	[ -n "$ss_device_fingerprint" ] && {
-		printf '%s' "$ss_device_fingerprint"
-		return 0
-	}
-
-	if [ -s "$SS_DEVICE_ID_FILE" ]; then
-		value="$(cat "$SS_DEVICE_ID_FILE" 2>/dev/null | head -n 1)"
-		[ -n "$value" ] && {
-			printf '%s' "$value"
-			return 0
-		}
-	fi
-
-	mac="$(ss_detect_primary_mac)"
-	material="${model}|${arch}|${mac}|$(cat /etc/openwrt_release 2>/dev/null)"
-
-	if command_exists sha256sum; then
-		value="$(printf '%s' "$material" | sha256sum | awk '{print $1}')"
-	else
-		value="${model}-${arch}-${mac}"
-	fi
-
-	mkdir -p "${SS_DEVICE_ID_FILE%/*}" >/dev/null 2>&1 || true
-	printf '%s\n' "$value" >"$SS_DEVICE_ID_FILE" 2>/dev/null || true
-	chmod 0600 "$SS_DEVICE_ID_FILE" 2>/dev/null || true
-
-	printf '%s' "$value"
+	ss_identity_ensure "$model" "$arch" || return 1
+	printf '%s' "$SS_PHYSICAL_FINGERPRINT"
 }
 
 ss_write_resolve_payload() {
 	local out="$1"
-	local model vendor arch memory fingerprint
+	local model vendor arch memory physical_fingerprint
 
 	model="$(ss_detect_device_model)"
 	vendor="$(ss_detect_device_vendor "$model")"
 	arch="$(ss_detect_device_arch)"
 	memory="$(ss_detect_device_memory_mb)"
-	fingerprint="$(ss_get_or_create_device_fingerprint "$model" "$arch")"
+	physical_fingerprint="$(ss_get_or_create_physical_fingerprint "$model" "$arch")" || return 1
 
 	is_valid_integer "$memory" || memory="0"
 
-	cat >"$out" <<EOF
-{"license_key":$(ss_json_value "$ss_license_key"),"device":{"fingerprint":$(ss_json_value "$fingerprint"),"vendor":$(ss_json_value "$vendor"),"model":$(ss_json_value "$model"),"arch":$(ss_json_value "$arch"),"memory_mb":${memory},"safeshield_version":$(ss_json_value "${PKG_VERSION:-unknown}")}}
-EOF
+	ss_status_set physical_fingerprint "$SS_PHYSICAL_FINGERPRINT"
+	ss_status_set fingerprint_version "$SS_FINGERPRINT_VERSION"
+	ss_status_set identity_provider "$SS_IDENTITY_PROVIDER"
+	ss_status_set identity_source "$SS_IDENTITY_SOURCE"
+	ss_status_set identity_strength "$SS_IDENTITY_STRENGTH"
+	ss_status_set identity_profile "$SS_IDENTITY_PROFILE"
+	ss_status_set installation_id "$SS_INSTALLATION_ID"
 
-	ss_status_set device_fingerprint "$fingerprint"
+	cat >"$out" <<__SAFESHIELD_JSON__
+{
+  "license_key": $(ss_json_value "$ss_license_key"),
+  "device": {
+    "physical_fingerprint": $(ss_json_value "$physical_fingerprint"),
+    "fingerprint_version": ${SS_FINGERPRINT_VERSION:-1},
+    "identity_provider": $(ss_json_value "$SS_IDENTITY_PROVIDER"),
+    "identity_source": $(ss_json_value "$SS_IDENTITY_SOURCE"),
+    "identity_strength": $(ss_json_value "$SS_IDENTITY_STRENGTH"),
+    "identity_profile": $(ss_json_value "$SS_IDENTITY_PROFILE"),
+    "installation_id": $(ss_json_value "$SS_INSTALLATION_ID"),
+    "vendor": $(ss_json_value "$vendor"),
+    "model": $(ss_json_value "$model"),
+    "arch": $(ss_json_value "$arch"),
+    "memory_mb": ${memory}
+  }
+}
+__SAFESHIELD_JSON__
 }
 
 ss_uclient_supports() {

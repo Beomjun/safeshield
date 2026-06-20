@@ -109,6 +109,11 @@ function cfg(name, def) {
     return (v == null) ? def : v;
 }
 
+function identity_cfg(name, def) {
+    let v = uci.get(PKG_NAME, 'identity', name);
+    return (v == null) ? def : v;
+}
+
 function mask_secret(v) {
     let s = sprintf('%s', v || '');
     let n = length(s);
@@ -265,7 +270,13 @@ function build_status() {
     let license_configured = !!license_key;
     let apply_local_overrides = to_bool(cfg('apply_local_overrides', '1'), true);
 
-    let cfg_device_fingerprint = cfg('device_fingerprint', '');
+    let cfg_physical_fingerprint = identity_cfg('physical_fingerprint', '');
+    let cfg_fingerprint_version = identity_cfg('fingerprint_version', '1');
+    let cfg_identity_provider = identity_cfg('identity_provider', '');
+    let cfg_identity_source = identity_cfg('identity_source', '');
+    let cfg_identity_strength = identity_cfg('identity_strength', '');
+    let cfg_identity_profile = identity_cfg('identity_profile', '');
+    let cfg_installation_id = identity_cfg('installation_id', '');
     let cfg_device_vendor = cfg('device_vendor', '');
     let cfg_device_model = cfg('device_model', '');
     let cfg_device_arch = cfg('device_arch', '');
@@ -302,7 +313,13 @@ function build_status() {
 
     let license_plan = data.license_plan || '';
     let license_status = data.license_status || '';
-    let device_fingerprint = data.device_fingerprint || cfg_device_fingerprint || '';
+    let physical_fingerprint = data.physical_fingerprint || cfg_physical_fingerprint || '';
+    let fingerprint_version = to_int(data.fingerprint_version || cfg_fingerprint_version || 1, 1);
+    let identity_provider = data.identity_provider || cfg_identity_provider || '';
+    let identity_source = data.identity_source || cfg_identity_source || '';
+    let identity_strength = data.identity_strength || cfg_identity_strength || '';
+    let identity_profile = data.identity_profile || cfg_identity_profile || '';
+    let installation_id = data.installation_id || cfg_installation_id || '';
     let device_profile = data.device_profile || '';
 
     let health_dnsmasq_binary = to_bool(data.health_dnsmasq_binary || '0', false);
@@ -363,10 +380,16 @@ function build_status() {
         },
 
         device: {
-            fingerprint: device_fingerprint,
+            physical_fingerprint: physical_fingerprint,
+            fingerprint_version: fingerprint_version,
+            identity_provider: identity_provider,
+            identity_source: identity_source,
+            identity_strength: identity_strength,
+            identity_profile: identity_profile,
+            installation_id: installation_id,
             profile: device_profile,
             configured: {
-                fingerprint: cfg_device_fingerprint,
+                physical_fingerprint: cfg_physical_fingerprint,
                 vendor: cfg_device_vendor,
                 model: cfg_device_model,
                 arch: cfg_device_arch,

@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
 PKG_VERSION:=0.3.1
-PKG_RELEASE:=18
+PKG_RELEASE:=19
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -47,6 +47,8 @@ define Package/safeshield/install
 
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/safeshield $(1)/etc/config/safeshield
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) ./files/etc/uci-defaults/90_safeshield_identity $(1)/etc/uci-defaults/90_safeshield_identity
 
 	$(INSTALL_DIR) $(1)/usr/lib/safeshield
 	$(INSTALL_BIN) ./files/usr/lib/safeshield/core.sh $(1)/usr/lib/safeshield/core.sh
@@ -54,6 +56,7 @@ define Package/safeshield/install
 	$(INSTALL_BIN) ./files/usr/lib/safeshield/status.sh $(1)/usr/lib/safeshield/status.sh
 	$(INSTALL_BIN) ./files/usr/lib/safeshield/utils.sh $(1)/usr/lib/safeshield/utils.sh
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/config.sh $(1)/usr/lib/safeshield/config.sh
+	$(INSTALL_BIN) ./files/usr/lib/safeshield/identity.sh $(1)/usr/lib/safeshield/identity.sh
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/dns.sh $(1)/usr/lib/safeshield/dns.sh
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/blocklist.sh $(1)/usr/lib/safeshield/blocklist.sh
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/status-store.uc $(1)/usr/lib/safeshield/status-store.uc
@@ -61,12 +64,28 @@ define Package/safeshield/install
 
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/ucode
 	$(INSTALL_BIN) ./files/usr/share/rpcd/ucode/safeshield.uc $(1)/usr/share/rpcd/ucode/safeshield.uc
+	$(INSTALL_DIR) $(1)/lib/upgrade/keep.d
+	$(INSTALL_DATA) ./files/lib/upgrade/keep.d/safeshield $(1)/lib/upgrade/keep.d/safeshield
 endef
 
 define Package/safeshield/postinst
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
 	mkdir -p /etc/safeshield
+	if [ -r /usr/lib/safeshield/identity.sh ]; then
+		. /lib/functions.sh 2>/dev/null || true
+		. /lib/functions/system.sh 2>/dev/null || true
+		. /usr/lib/safeshield/utils.sh 2>/dev/null || true
+		. /usr/lib/safeshield/log.sh 2>/dev/null || true
+		. /usr/lib/safeshield/status.sh 2>/dev/null || true
+		. /usr/lib/safeshield/config.sh 2>/dev/null || true
+		. /usr/lib/safeshield/identity.sh 2>/dev/null || true
+		. /usr/lib/safeshield/blocklist.sh 2>/dev/null || true
+		ss_load_config >/dev/null 2>&1 || true
+		model="$(ss_detect_device_model 2>/dev/null || cat /tmp/sysinfo/model 2>/dev/null || echo OpenWrt)"
+		arch="$(ss_detect_device_arch 2>/dev/null || uname -m 2>/dev/null || echo unknown)"
+		ss_identity_ensure "$model" "$arch" >/dev/null 2>&1 || true
+	fi
 	if [ ! -f /etc/safeshield/allowlist ]; then
 		cat << 'EOF' > /etc/safeshield/allowlist
 # SafeShield allowlist

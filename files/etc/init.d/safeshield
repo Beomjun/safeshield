@@ -44,6 +44,11 @@ start_service() {
 		return 1
 	}
 
+	ss_identity_ensure "$(ss_detect_device_model 2>/dev/null || echo OpenWrt)" "$(ss_detect_device_arch 2>/dev/null || echo unknown)" || {
+		log_error "Failed to initialize SafeShield device identity"
+		return 1
+	}
+
 	if [ "${ss_enabled}" != "1" ]; then
 		log_warn "${PKG_NAME} is disabled"
 		return 0
