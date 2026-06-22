@@ -18,12 +18,11 @@ A lightweight DNS-based ad blocker for OpenWrt, designed with a powerful, easy-t
 
 ## How it works
 
-SafeShield downloads domain blocklists from configured sources,
-normalizes and validates the entries, and generates a blocklist
-compatible with **dnsmasq**.
+SafeShield provides DNS-level protection by automatically applying the
+appropriate **dnsmasq**-compatible blocklist for each device.
 
-The blocklist is automatically refreshed and applied to dnsmasq,
-providing DNS-level protection against ads, trackers, and phishing domains.
+It helps block ads, trackers, and phishing domains with scheduled updates
+and optional local allow/block overrides.
 
 ## System Requirements
 

@@ -3,7 +3,7 @@ config safeshield 'config'
 	option verbosity '2'
 
 	# License
-	option license_key 'LIC-XXXX'
+	option license_key ''
 
 	# Device identity / profile
 	option device_vendor ''

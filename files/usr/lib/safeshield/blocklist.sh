@@ -281,17 +281,17 @@ ss_http_get_file() {
 ss_resolve_artifact() {
 	local url response payload retries ok
 
-	if [ -z "$ss_license_key" ]; then
-		log_error "license_key is required for Hub API resolve"
-		ss_status_add_error "license_key_missing"
-		return 1
-	fi
-
 	url='https://www.smartsafehub.com/api/v1/licenses/resolve'
 	payload="$SS_API_PAYLOAD"
 	response="$SS_API_RESPONSE"
 
 	ss_status_set artifact_download_url_present "0"
+
+	if [ -z "$ss_license_key" ]; then
+		log_info "license_key is empty; resolving SafeShield artifact as unlicensed/free device"
+		ss_status_set license_plan "free"
+		ss_status_set license_status "unlicensed"
+	fi
 
 	ss_write_resolve_payload "$payload" || return 1
 
@@ -342,11 +342,11 @@ ss_resolve_artifact() {
 	ss_status_set artifact_version "$ss_resolved_artifact_version"
 	ss_status_set artifact_unique_domains "${ss_resolved_artifact_unique_domains:-0}"
 	ss_status_set artifact_rules "${ss_resolved_artifact_rules:-0}"
-	ss_status_set license_plan "$ss_resolved_license_plan"
-	ss_status_set license_status "$ss_resolved_license_status"
+	ss_status_set license_plan "${ss_resolved_license_plan:-free}"
+	ss_status_set license_status "${ss_resolved_license_status:-unlicensed}"
 	ss_status_set device_profile "$ss_resolved_device_profile"
 
-	log_ok "Resolved artifact ${ss_resolved_artifact_tier:-unknown}/${ss_resolved_artifact_version:-unknown}"
+	log_ok "Resolved artifact ${ss_resolved_artifact_tier:-unknown}/${ss_resolved_artifact_version:-unknown} for plan ${ss_resolved_license_plan:-free}"
 }
 
 ss_verify_artifact_sha256() {
