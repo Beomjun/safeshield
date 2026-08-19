@@ -161,16 +161,13 @@ function dnsmasq_running() {
     return false;
 }
 
-function build_api_source(data, enabled, license_key) {
+function build_api_source(data, enabled) {
     let api_resolve_ok = to_optional_bool(data.health_api_resolve);
     let artifact_download_ok = to_optional_bool(data.health_artifact_download);
     let last_result = data.last_result || '';
 
     if (!enabled) {
         last_result = 'disabled';
-    }
-    else if (!license_key) {
-        last_result = 'license_key_missing';
     }
     else if (api_resolve_ok == true && artifact_download_ok == true) {
         last_result = 'ok';
@@ -189,7 +186,7 @@ function build_api_source(data, enabled, license_key) {
         section: 'hub_api',
         name: 'SmartSafeHub API Artifact',
         action: 'block',
-        enabled: enabled && !!license_key,
+        enabled: enabled,
         last_result: last_result,
         line_count: to_int(data.artifact_unique_domains || data.valid_line_count || 0, 0),
         size_kb: to_int(data.blocklist_file_size_kb || 0, 0),
@@ -336,7 +333,7 @@ function build_status() {
     let health_artifact_download = to_optional_bool(data.health_artifact_download);
     let health_artifact_sha256 = to_optional_bool(data.health_artifact_sha256);
 
-    let hub_source = build_api_source(data, enabled, license_key);
+    let hub_source = build_api_source(data, enabled);
     let installed = blocklist_installed || file_exists(BLOCKLIST_FILE);
     let refreshd_running = service_running(PKG_NAME);
     let dns_running = dnsmasq_running();
