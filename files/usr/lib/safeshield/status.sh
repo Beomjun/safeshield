@@ -128,13 +128,19 @@ ss_status_mark_success() {
 }
 
 ss_status_prepare_refresh() {
-	local last_success
+	local last_success last_local_apply last_local_apply_failure
 
 	last_success="$(json get last_success 2>/dev/null)"
+	last_local_apply="$(json get last_local_apply 2>/dev/null)"
+	last_local_apply_failure="$(json get last_local_apply_failure 2>/dev/null)"
 	is_valid_integer "$last_success" || last_success=0
+	is_valid_integer "$last_local_apply" || last_local_apply=0
+	is_valid_integer "$last_local_apply_failure" || last_local_apply_failure=0
 
 	ss_status_reset
 	ss_status_set last_success "$last_success"
+	ss_status_set last_local_apply "$last_local_apply"
+	ss_status_set last_local_apply_failure "$last_local_apply_failure"
 }
 
 ss_status_set() {
@@ -173,6 +179,8 @@ ss_status_reset() {
 	ss_status_set last_attempt "0"
 	ss_status_set last_success "0"
 	ss_status_set last_failure "0"
+	ss_status_set last_local_apply "0"
+	ss_status_set last_local_apply_failure "0"
 	ss_status_set next_refresh_at "0"
 
 	ss_status_reset_health_fields
@@ -267,6 +275,32 @@ ss_refresh_lock_open() {
 		eval "exec ${SS_REFRESH_LOCK_FD}>&-"
 		return 1
 	}
+}
+
+ss_refresh_lock_open_wait() {
+	local timeout="${1:-120}"
+	local waited=0
+
+	is_valid_integer "$timeout" || timeout=120
+	mkdir -p "${SS_REFRESH_LOCK%/*}" || return 1
+	eval "exec ${SS_REFRESH_LOCK_FD}>\"${SS_REFRESH_LOCK}\"" || return 1
+
+	while ! flock -n "${SS_REFRESH_LOCK_FD}"; do
+		if [ "$waited" -ge "$timeout" ] 2>/dev/null; then
+			eval "exec ${SS_REFRESH_LOCK_FD}>&-" 2>/dev/null || true
+			return 1
+		fi
+
+		ss_should_stop && {
+			eval "exec ${SS_REFRESH_LOCK_FD}>&-" 2>/dev/null || true
+			return 130
+		}
+
+		sleep 1
+		waited=$((waited + 1))
+	done
+
+	return 0
 }
 
 ss_refresh_lock_close() {

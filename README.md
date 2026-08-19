@@ -318,6 +318,10 @@ ubus call safeshield rule_delete '{
 }'
 ```
 
+### Local rule fast apply
+
+`rule_add` and `rule_delete` keep the public SafeShield API unchanged, but their automatic apply path no longer performs a full Hub artifact refresh. SafeShield retains the normalized Hub domains in `/tmp/safeshield/api.block.txt`, rebuilds only the local allow/block inputs, merges them atomically, restarts dnsmasq, and verifies runtime DNS. The local apply worker shares the normal refresh lock, so a rule edit made during a full refresh waits for that refresh and then reapplies the newest local state. If the cached Hub artifact is missing, SafeShield falls back to one normal full refresh.
+
 Update or clear the license key. The raw key is never returned by the API.
 
 ```sh

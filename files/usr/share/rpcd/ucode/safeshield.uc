@@ -320,6 +320,8 @@ function build_status() {
     let last_attempt = to_int(data.last_attempt || 0, 0);
     let last_success = to_int(data.last_success || 0, 0);
     let last_failure = to_int(data.last_failure || 0, 0);
+    let last_local_apply = to_int(data.last_local_apply || 0, 0);
+    let last_local_apply_failure = to_int(data.last_local_apply_failure || 0, 0);
     let next_refresh_at = to_int(data.next_refresh_at || 0, 0);
     let last_result = data.last_result || '';
     let last_error_code = data.last_error_code || '';
@@ -488,6 +490,8 @@ function build_status() {
             last_attempt: last_attempt,
             last_success: last_success,
             last_failure: last_failure,
+            last_local_apply: last_local_apply,
+            last_local_apply_failure: last_local_apply_failure,
             next_refresh_at: next_refresh_at,
             refresh_interval_s: refresh_interval_s,
             next_refresh_in_s: next_refresh_in_s,
@@ -664,6 +668,47 @@ function start_refresh_async() {
         '/bin/sh',
         '-c',
         '/etc/init.d/safeshield refresh_once </dev/null >/dev/null 2>&1 &'
+    ], 5000);
+
+    return {
+        accepted: rc == 0,
+        reason: (rc == 0) ? '' : 'spawn_failed',
+        rc: rc
+    };
+}
+
+function start_local_apply_async() {
+    reload_uci();
+
+    if (!to_bool(cfg('enabled', '0'), false)) {
+        return {
+            accepted: false,
+            reason: 'disabled'
+        };
+    }
+
+    if (!to_bool(cfg('apply_local_overrides', '1'), true)) {
+        return {
+            accepted: false,
+            reason: 'local_overrides_disabled'
+        };
+    }
+
+    if (!service_running(PKG_NAME)) {
+        return {
+            accepted: false,
+            reason: 'service_stopped'
+        };
+    }
+
+    // The shell worker shares the refresh lock with full artifact refreshes.
+    // It waits for an in-flight refresh and then merges the newest local rule
+    // files against the retained api.block.txt cache. Duplicate workers are
+    // harmless because the engine fingerprints the normalized local state.
+    let rc = system([
+        '/bin/sh',
+        '-c',
+        '/etc/init.d/safeshield apply_local_rules </dev/null >/dev/null 2>&1 &'
     ], 5000);
 
     return {
@@ -891,7 +936,7 @@ function apply_rule_refresh(args) {
         };
     }
 
-    let r = start_refresh_async();
+    let r = start_local_apply_async();
 
     return {
         requested: true,

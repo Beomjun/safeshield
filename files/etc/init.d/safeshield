@@ -16,9 +16,10 @@ IPKG_INSTROOT="${IPKG_INSTROOT:-}"
 export IPKG_INSTROOT
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.3.8'
+readonly PKG_VERSION='0.3.9'
 
 if type extra_command >/dev/null 2>&1; then
+	extra_command 'apply_local_rules' 'Apply local allow/block rules using the cached Hub artifact'
 	extra_command 'force_download' 'Resolve and download latest Hub artifact'
 	extra_command 'pause' 'Pause the service'
 	extra_command 'refresh_once' 'Run one immediate refresh in foreground'
@@ -186,6 +187,12 @@ status_service() {
 	else
 		printf '%s\n' 'refreshd: stopped'
 	fi
+}
+
+apply_local_rules() {
+	ss_load_config || return 1
+	ss_mkdirs || return 1
+	safeshield_apply_local_rules
 }
 
 refresh_once() {
