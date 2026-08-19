@@ -16,7 +16,7 @@ IPKG_INSTROOT="${IPKG_INSTROOT:-}"
 export IPKG_INSTROOT
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.3.7'
+readonly PKG_VERSION='0.3.8'
 
 if type extra_command >/dev/null 2>&1; then
 	extra_command 'force_download' 'Resolve and download latest Hub artifact'

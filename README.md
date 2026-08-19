@@ -261,12 +261,31 @@ ubus call safeshield config_update '{
 }'
 ```
 
-Enable or disable SafeShield. This method commits the UCI value and applies
-the full SafeShield enable/disable lifecycle:
+Enable or disable SafeShield. This method commits the desired UCI value and
+requests the full SafeShield enable/disable lifecycle. Runtime convergence is
+asynchronous under procd, so a successful response reports the accepted target
+state instead of returning a potentially stale status snapshot:
 
 ```sh
 ubus call safeshield set_enabled '{"enabled":true}'
 ```
+
+A successful response has this shape:
+
+```json
+{
+  "ok": true,
+  "changed": true,
+  "accepted": true,
+  "target_enabled": true,
+  "reconciled": false
+}
+```
+
+Clients should poll `safeshield.status` until runtime state converges. For an
+enable request, wait for `enabled=true`, `active=true` and
+`runtime.refreshd_running=true`. For a disable request, wait for
+`enabled=false`, `active=false` and `runtime.refreshd_running=false`.
 
 Request an immediate refresh:
 

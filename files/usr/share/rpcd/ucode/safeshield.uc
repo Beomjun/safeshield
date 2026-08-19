@@ -1004,22 +1004,23 @@ function set_enabled_call(request) {
             ok: false,
             committed: changed,
             changed: changed,
-            enabled: enabled,
+            accepted: false,
+            target_enabled: enabled,
+            reconciled: false,
             service_rc: restarted.rc,
             error: {
                 code: 'service_restart_failed',
-                message: 'Enabled state is configured but SafeShield failed to reconcile its runtime lifecycle'
-            },
-            status: build_status()
+                message: 'Enabled state is configured but SafeShield failed to request runtime lifecycle reconciliation'
+            }
         };
     }
 
     return {
         ok: true,
         changed: changed,
-        reconciled: true,
-        enabled: enabled,
-        status: build_status()
+        accepted: true,
+        target_enabled: enabled,
+        reconciled: false
     };
 }
 
