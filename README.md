@@ -221,6 +221,95 @@ ubus call safeshield status
 logread | grep -i safeshield
 ```
 
+## SafeShield ubus API
+
+The `safeshield` package owns the public management API used by LuCI and
+SmartSafeHub clients. The API keeps UCI mutations, service lifecycle,
+refresh scheduling and local rule files behind one ubus object.
+
+Available methods:
+
+```text
+safeshield.status
+safeshield.config
+safeshield.config_update
+safeshield.set_enabled
+safeshield.refresh
+safeshield.rules_list
+safeshield.rule_add
+safeshield.rule_delete
+safeshield.license_update
+```
+
+Read the current public configuration:
+
+```sh
+ubus call safeshield config
+```
+
+Update writable configuration values. `enabled` and `license_key` are
+intentionally excluded and have dedicated methods:
+
+```sh
+ubus call safeshield config_update '{
+  "values": {
+    "refresh_interval_s": 21600,
+    "refresh_on_boot": true,
+    "require_wan": true,
+    "apply_local_overrides": true
+  }
+}'
+```
+
+Enable or disable SafeShield. This method commits the UCI value and applies
+the full SafeShield enable/disable lifecycle:
+
+```sh
+ubus call safeshield set_enabled '{"enabled":true}'
+```
+
+Request an immediate refresh:
+
+```sh
+ubus call safeshield refresh
+```
+
+List local allow/block overrides:
+
+```sh
+ubus call safeshield rules_list
+ubus call safeshield rules_list '{"action":"allow"}'
+ubus call safeshield rules_list '{"action":"block"}'
+```
+
+Add or delete a local rule. Rule changes request an asynchronous refresh by
+default so the active dnsmasq blocklist is rebuilt. For bulk edits, pass
+`"refresh":false` on intermediate mutations and invoke `safeshield.refresh`
+after the last mutation.
+
+```sh
+ubus call safeshield rule_add '{
+  "action": "block",
+  "domain": "example.com"
+}'
+
+ubus call safeshield rule_delete '{
+  "action": "block",
+  "domain": "example.com"
+}'
+```
+
+Update or clear the license key. The raw key is never returned by the API.
+
+```sh
+ubus call safeshield license_update '{"license_key":"YOUR-LICENSE-KEY"}'
+ubus call safeshield license_update '{"license_key":""}'
+```
+
+The package also installs an rpcd ACL named `safeshield`. Read access covers
+`status`, `config` and `rules_list`; mutating methods are declared as write
+access.
+
 ## Contributors
 
 <a href="https://github.com/Junatum/safeshield/graphs/contributors">

@@ -170,7 +170,7 @@ main() {
 
 	wait_for_wan_if_needed
 	ss_status_set stage "boot_delay"
-	set_next_refresh_epoch "$(( $(date +%s) + boot_delay ))"
+	set_next_refresh_epoch "$(($(date +%s) + boot_delay))"
 	sleep_seconds "$boot_delay" || exit 0
 
 	if [ "$refresh_on_boot" = "1" ] && [ "${ss_enabled}" = "1" ]; then

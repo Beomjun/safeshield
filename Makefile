@@ -6,8 +6,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.3.6
-PKG_RELEASE:=26
+PKG_VERSION:=0.3.7
+PKG_RELEASE:=27
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -64,6 +64,8 @@ define Package/safeshield/install
 
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/ucode
 	$(INSTALL_BIN) ./files/usr/share/rpcd/ucode/safeshield.uc $(1)/usr/share/rpcd/ucode/safeshield.uc
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
+	$(INSTALL_DATA) ./files/usr/share/rpcd/acl.d/safeshield.json $(1)/usr/share/rpcd/acl.d/safeshield.json
 	$(INSTALL_DIR) $(1)/lib/upgrade/keep.d
 	$(INSTALL_DATA) ./files/lib/upgrade/keep.d/safeshield $(1)/lib/upgrade/keep.d/safeshield
 endef

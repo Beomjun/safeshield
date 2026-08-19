@@ -11,6 +11,30 @@ const LOCAL_ALLOWLIST_FILE = '/etc/safeshield/allowlist';
 const LOCAL_BLOCKLIST_FILE = '/etc/safeshield/blocklist';
 const SCHEMA_NAME = 'safeshield.status';
 const SCHEMA_VERSION = 1;
+const CONFIG_SCHEMA_NAME = 'safeshield.config';
+const CONFIG_SCHEMA_VERSION = 1;
+const RULES_SCHEMA_NAME = 'safeshield.rules';
+const RULES_SCHEMA_VERSION = 1;
+const SERVICE_INIT = '/etc/init.d/safeshield';
+const RULES_DIR = '/etc/safeshield';
+
+const CONFIG_SPEC = {
+    verbosity: { kind: 'int', def: 2, min: 0, max: 7 },
+    apply_local_overrides: { kind: 'bool', def: true },
+    max_blocklist_file_size_kb: { kind: 'int', def: 30000, min: 1, max: 2147483647 },
+    min_valid_line_count: { kind: 'int', def: 3000, min: 0, max: 2147483647 },
+    compress_blocklist: { kind: 'bool', def: false },
+    initial_dnsmasq_restart: { kind: 'bool', def: false },
+    dnsmasq_sanity_check: { kind: 'bool', def: true },
+    download_timeout: { kind: 'int', def: 10, min: 1, max: 86400 },
+    download_retry: { kind: 'int', def: 3, min: 1, max: 100 },
+    pause_timeout: { kind: 'int', def: 20, min: 1, max: 86400 },
+    boot_start_delay_s: { kind: 'int', def: 30, min: 0, max: 86400 },
+    refresh_on_boot: { kind: 'bool', def: true },
+    refresh_interval_s: { kind: 'int', def: 21600, min: 1, max: 2147483647 },
+    require_wan: { kind: 'bool', def: true },
+    debug: { kind: 'bool', def: false }
+};
 
 function trim(s) {
     return replace(s, /^[\r\n\t ]+|[\r\n\t ]+$/, '');
@@ -104,6 +128,10 @@ function to_int(v, def) {
 
     let n = int(v);
     return (type(n) == 'int') ? n : def;
+}
+
+function reload_uci() {
+    return !!uci.load(PKG_NAME);
 }
 
 function cfg(name, def) {
@@ -256,6 +284,8 @@ function build_summary(status, stage, valid_line_count, artifact_tier, artifact_
 }
 
 function build_status() {
+    reload_uci();
+
     let state = read_json_file(STATUS_FILE, {});
     let data = state.data || {};
 
@@ -466,12 +496,732 @@ function build_status() {
     };
 }
 
+function api_error(code, message, field) {
+    let error = {
+        code: code,
+        message: message
+    };
+
+    if (field) {
+        error.field = field;
+    }
+
+    return {
+        ok: false,
+        error: error
+    };
+}
+
+function uci_commit_option(name, value) {
+    if (!uci.set(PKG_NAME, 'config', name, sprintf('%s', value))) {
+        return false;
+    }
+
+    if (!uci.commit(PKG_NAME)) {
+        uci.revert(PKG_NAME);
+        return false;
+    }
+
+    reload_uci();
+    return true;
+}
+
+function bool_uci(v) {
+    return v ? '1' : '0';
+}
+
+function config_public_value(name, spec) {
+    let raw = cfg(name, null);
+
+    if (spec.kind == 'bool') {
+        return to_bool(raw, spec.def);
+    }
+
+    return to_int(raw, spec.def);
+}
+
+function build_config() {
+    reload_uci();
+
+    let values = {};
+
+    for (let name, spec in CONFIG_SPEC) {
+        values[name] = config_public_value(name, spec);
+    }
+
+    values.enabled = to_bool(cfg('enabled', '0'), false);
+
+    return {
+        schema: {
+            name: CONFIG_SCHEMA_NAME,
+            version: CONFIG_SCHEMA_VERSION
+        },
+        values: values,
+        license: {
+            configured: !!cfg('license_key', ''),
+            key_masked: mask_secret(cfg('license_key', ''))
+        },
+        device: {
+            vendor: cfg('device_vendor', ''),
+            model: cfg('device_model', ''),
+            arch: cfg('device_arch', ''),
+            memory_mb: to_int(cfg('device_memory_mb', ''), 0)
+        }
+    };
+}
+
+function validate_config_value(name, value) {
+    let spec = CONFIG_SPEC[name];
+
+    if (!spec) {
+        if (name == 'enabled') {
+            return api_error('dedicated_method_required', 'Use set_enabled to change enabled state', name);
+        }
+
+        if (name == 'license_key') {
+            return api_error('dedicated_method_required', 'Use license_update to change the license key', name);
+        }
+
+        return api_error('unknown_option', 'Unsupported SafeShield configuration option', name);
+    }
+
+    if (spec.kind == 'bool') {
+        if (type(value) != 'bool') {
+            return api_error('invalid_type', 'Expected a boolean value', name);
+        }
+
+        return {
+            ok: true,
+            uci: bool_uci(value),
+            value: value
+        };
+    }
+
+    if (spec.kind == 'int') {
+        if (type(value) != 'int') {
+            return api_error('invalid_type', 'Expected an integer value', name);
+        }
+
+        if (value < spec.min || value > spec.max) {
+            return api_error(
+                'out_of_range',
+                sprintf('Value must be between %d and %d', spec.min, spec.max),
+                name
+            );
+        }
+
+        return {
+            ok: true,
+            uci: sprintf('%d', value),
+            value: value
+        };
+    }
+
+    return api_error('invalid_spec', 'Invalid internal configuration specification', name);
+}
+
+function run_service_action(action, timeout_ms) {
+    let rc = system([ SERVICE_INIT, action ], timeout_ms || 60000);
+
+    return {
+        ok: rc == 0,
+        rc: rc
+    };
+}
+
+function refresh_running() {
+    let state = read_json_file(STATUS_FILE, {});
+    let data = state.data || {};
+
+    return data.status == 'running';
+}
+
+function start_refresh_async() {
+    reload_uci();
+
+    if (!to_bool(cfg('enabled', '0'), false)) {
+        return {
+            accepted: false,
+            reason: 'disabled'
+        };
+    }
+
+    if (!service_running(PKG_NAME)) {
+        return {
+            accepted: false,
+            reason: 'service_stopped'
+        };
+    }
+
+    if (refresh_running()) {
+        return {
+            accepted: false,
+            reason: 'already_running'
+        };
+    }
+
+    let rc = system([
+        '/bin/sh',
+        '-c',
+        '/etc/init.d/safeshield refresh_once </dev/null >/dev/null 2>&1 &'
+    ], 5000);
+
+    return {
+        accepted: rc == 0,
+        reason: (rc == 0) ? '' : 'spawn_failed',
+        rc: rc
+    };
+}
+
+function normalize_rule_domain(value) {
+    if (type(value) != 'string') {
+        return '';
+    }
+
+    let domain = lc(trim(value));
+
+    if (!domain || substr(domain, 0, 1) == '#' || substr(domain, 0, 1) == '!') {
+        return '';
+    }
+
+    domain = replace(domain, /^0\.0\.0\.0[ \t]+/, '');
+    domain = replace(domain, /^127\.0\.0\.1[ \t]+/, '');
+    domain = replace(domain, /^local=\//, '');
+    domain = replace(domain, /^address=\//, '');
+    domain = replace(domain, /\/0\.0\.0\.0$/, '');
+    domain = replace(domain, /\/::$/, '');
+    domain = replace(domain, /\/$/, '');
+    domain = replace(domain, /^\//, '');
+
+    if (!match(domain, /^[a-z0-9._-]+$/) || length(domain) > 253 || index(domain, '..') >= 0) {
+        return '';
+    }
+
+    for (let label in split(domain, '.')) {
+        if (!label || length(label) > 63 || substr(label, 0, 1) == '-' || substr(label, -1) == '-') {
+            return '';
+        }
+    }
+
+    return domain;
+}
+
+function rule_path(action) {
+    if (action == 'allow') {
+        return LOCAL_ALLOWLIST_FILE;
+    }
+
+    if (action == 'block') {
+        return LOCAL_BLOCKLIST_FILE;
+    }
+
+    return null;
+}
+
+function read_rule_entries(path) {
+    let content = fs.readfile(path) || '';
+    let entries = [];
+    let seen = {};
+
+    for (let line in split(content, /\n/)) {
+        let domain = normalize_rule_domain(line);
+
+        if (!domain || seen[domain]) {
+            continue;
+        }
+
+        seen[domain] = true;
+        push(entries, domain);
+    }
+
+    sort(entries);
+    return entries;
+}
+
+function write_rule_file_atomic(path, content) {
+    if (!fs.stat(RULES_DIR) && !fs.mkdir(RULES_DIR)) {
+        return false;
+    }
+
+    let tmp = sprintf('%s.tmp.%d', path, time());
+
+    if (fs.writefile(tmp, content) == null) {
+        fs.unlink(tmp);
+        return false;
+    }
+
+    if (!fs.chmod(tmp, 0o644)) {
+        fs.unlink(tmp);
+        return false;
+    }
+
+    if (!fs.rename(tmp, path)) {
+        fs.unlink(tmp);
+        return false;
+    }
+
+    return true;
+}
+
+function rule_file_contains(path, domain) {
+    for (let existing in read_rule_entries(path)) {
+        if (existing == domain) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function add_rule_to_file(path, domain) {
+    let content = fs.readfile(path) || '';
+
+    if (rule_file_contains(path, domain)) {
+        return {
+            ok: true,
+            changed: false
+        };
+    }
+
+    if (content && substr(content, -1) != '\n') {
+        content += '\n';
+    }
+
+    content += domain + '\n';
+
+    return {
+        ok: write_rule_file_atomic(path, content),
+        changed: true
+    };
+}
+
+function delete_rule_from_file(path, domain) {
+    let content = fs.readfile(path) || '';
+    let lines = split(content, /\n/);
+    let kept = [];
+    let changed = false;
+
+    for (let line in lines) {
+        if (normalize_rule_domain(line) == domain) {
+            changed = true;
+            continue;
+        }
+
+        push(kept, line);
+    }
+
+    if (!changed) {
+        return {
+            ok: true,
+            changed: false
+        };
+    }
+
+    let next = join('\n', kept);
+
+    return {
+        ok: write_rule_file_atomic(path, next),
+        changed: true
+    };
+}
+
+function build_rules(action) {
+    let allow = read_rule_entries(LOCAL_ALLOWLIST_FILE);
+    let block = read_rule_entries(LOCAL_BLOCKLIST_FILE);
+
+    if (action == 'allow') {
+        block = [];
+    }
+    else if (action == 'block') {
+        allow = [];
+    }
+
+    return {
+        schema: {
+            name: RULES_SCHEMA_NAME,
+            version: RULES_SCHEMA_VERSION
+        },
+        allow: allow,
+        block: block,
+        counts: {
+            allow: length(allow),
+            block: length(block)
+        }
+    };
+}
+
+function validate_rule_request(args) {
+    let action = args.action || '';
+    let domain = normalize_rule_domain(args.domain);
+
+    if (!rule_path(action)) {
+        return api_error('invalid_action', 'action must be either allow or block', 'action');
+    }
+
+    if (!domain) {
+        return api_error('invalid_domain', 'domain must be a plain valid domain name', 'domain');
+    }
+
+    return {
+        ok: true,
+        action: action,
+        domain: domain,
+        path: rule_path(action)
+    };
+}
+
+function apply_rule_refresh(args) {
+    reload_uci();
+
+    let should_refresh = (args.refresh == null) ? true : args.refresh;
+
+    if (!should_refresh) {
+        return {
+            requested: false,
+            accepted: false,
+            reason: 'not_requested'
+        };
+    }
+
+    if (!to_bool(cfg('apply_local_overrides', '1'), true)) {
+        return {
+            requested: false,
+            accepted: false,
+            reason: 'local_overrides_disabled'
+        };
+    }
+
+    let r = start_refresh_async();
+
+    return {
+        requested: true,
+        accepted: r.accepted,
+        reason: r.reason || ''
+    };
+}
+
+function config_update_call(request) {
+    reload_uci();
+
+    let values = request.args.values || {};
+    let changes = {};
+    let changed_names = [];
+
+    if (type(values) != 'object') {
+        return api_error('invalid_type', 'values must be an object', 'values');
+    }
+
+    for (let name, value in values) {
+        let checked = validate_config_value(name, value);
+
+        if (!checked.ok) {
+            return checked;
+        }
+
+        let current = cfg(name, null);
+        if (sprintf('%s', current) != checked.uci) {
+            changes[name] = checked.uci;
+            push(changed_names, name);
+        }
+    }
+
+    if (length(changed_names) == 0) {
+        return {
+            ok: true,
+            changed: [],
+            restarted: false,
+            config: build_config()
+        };
+    }
+
+    for (let name, value in changes) {
+        if (!uci.set(PKG_NAME, 'config', name, value)) {
+            uci.revert(PKG_NAME);
+            return api_error('uci_set_failed', 'Failed to update SafeShield configuration', name);
+        }
+    }
+
+    if (!uci.commit(PKG_NAME)) {
+        uci.revert(PKG_NAME);
+        return api_error('uci_commit_failed', 'Failed to commit SafeShield configuration');
+    }
+
+    reload_uci();
+
+    let restarted = run_service_action('restart', 60000);
+    if (!restarted.ok) {
+        return {
+            ok: false,
+            committed: true,
+            changed: changed_names,
+            restarted: false,
+            service_rc: restarted.rc,
+            error: {
+                code: 'service_restart_failed',
+                message: 'Configuration was committed but SafeShield failed to restart'
+            },
+            config: build_config()
+        };
+    }
+
+    let refresh = start_refresh_async();
+
+    return {
+        ok: true,
+        changed: changed_names,
+        restarted: true,
+        refresh: {
+            requested: true,
+            accepted: refresh.accepted,
+            reason: refresh.reason || ''
+        },
+        config: build_config()
+    };
+}
+
+function set_enabled_call(request) {
+    reload_uci();
+
+    if (request.args.enabled == null) {
+        return api_error('missing_argument', 'enabled is required', 'enabled');
+    }
+
+    if (type(request.args.enabled) != 'bool') {
+        return api_error('invalid_type', 'enabled must be a boolean', 'enabled');
+    }
+
+    let enabled = request.args.enabled;
+    let current = to_bool(cfg('enabled', '0'), false);
+    let changed = enabled != current;
+
+    if (changed && !uci_commit_option('enabled', bool_uci(enabled))) {
+        return api_error('uci_commit_failed', 'Failed to update enabled state');
+    }
+
+    let restarted = run_service_action('restart', 60000);
+    if (!restarted.ok) {
+        return {
+            ok: false,
+            committed: changed,
+            changed: changed,
+            enabled: enabled,
+            service_rc: restarted.rc,
+            error: {
+                code: 'service_restart_failed',
+                message: 'Enabled state is configured but SafeShield failed to reconcile its runtime lifecycle'
+            },
+            status: build_status()
+        };
+    }
+
+    return {
+        ok: true,
+        changed: changed,
+        reconciled: true,
+        enabled: enabled,
+        status: build_status()
+    };
+}
+
+function refresh_call() {
+    let r = start_refresh_async();
+
+    if (!r.accepted) {
+        return {
+            ok: r.reason == 'already_running',
+            accepted: false,
+            reason: r.reason,
+            status: build_status()
+        };
+    }
+
+    return {
+        ok: true,
+        accepted: true,
+        status: build_status()
+    };
+}
+
+function rules_list_call(request) {
+    let action = request.args.action || '';
+
+    if (action && !rule_path(action)) {
+        return api_error('invalid_action', 'action must be allow, block or omitted', 'action');
+    }
+
+    let result = build_rules(action);
+    result.ok = true;
+    return result;
+}
+
+function rule_add_call(request) {
+    let checked = validate_rule_request(request.args);
+
+    if (!checked.ok) {
+        return checked;
+    }
+
+    let result = add_rule_to_file(checked.path, checked.domain);
+
+    if (!result.ok) {
+        return api_error('rule_write_failed', 'Failed to update the local rule file');
+    }
+
+    let refresh = result.changed
+        ? apply_rule_refresh(request.args)
+        : { requested: false, accepted: false, reason: 'unchanged' };
+
+    return {
+        ok: true,
+        action: checked.action,
+        domain: checked.domain,
+        added: result.changed,
+        refresh: refresh,
+        rules: build_rules(checked.action)
+    };
+}
+
+function rule_delete_call(request) {
+    let checked = validate_rule_request(request.args);
+
+    if (!checked.ok) {
+        return checked;
+    }
+
+    let result = delete_rule_from_file(checked.path, checked.domain);
+
+    if (!result.ok) {
+        return api_error('rule_write_failed', 'Failed to update the local rule file');
+    }
+
+    let refresh = result.changed
+        ? apply_rule_refresh(request.args)
+        : { requested: false, accepted: false, reason: 'unchanged' };
+
+    return {
+        ok: true,
+        action: checked.action,
+        domain: checked.domain,
+        deleted: result.changed,
+        refresh: refresh,
+        rules: build_rules(checked.action)
+    };
+}
+
+function license_update_call(request) {
+    reload_uci();
+
+    if (request.args.license_key == null) {
+        return api_error('missing_argument', 'license_key is required; use an empty string to clear it', 'license_key');
+    }
+
+    let key = trim(request.args.license_key);
+
+    if (length(key) > 512 || match(key, /[\r\n]/)) {
+        return api_error('invalid_license_key', 'license_key must be at most 512 characters and contain no line breaks', 'license_key');
+    }
+
+    let current = cfg('license_key', '');
+
+    if (current == key) {
+        return {
+            ok: true,
+            changed: false,
+            license: {
+                configured: !!key,
+                key_masked: mask_secret(key)
+            },
+            refresh: {
+                requested: false,
+                accepted: false,
+                reason: 'unchanged'
+            }
+        };
+    }
+
+    if (!uci_commit_option('license_key', key)) {
+        return api_error('uci_commit_failed', 'Failed to update the SafeShield license key');
+    }
+
+    let refresh = start_refresh_async();
+
+    return {
+        ok: true,
+        changed: true,
+        license: {
+            configured: !!key,
+            key_masked: mask_secret(key)
+        },
+        refresh: {
+            requested: true,
+            accepted: refresh.accepted,
+            reason: refresh.reason || ''
+        }
+    };
+}
+
 return {
     safeshield: {
         status: {
             call: function () {
                 return build_status();
             }
+        },
+
+        config: {
+            call: function () {
+                return build_config();
+            }
+        },
+
+        config_update: {
+            args: {
+                values: {}
+            },
+            call: config_update_call
+        },
+
+        set_enabled: {
+            args: {
+                enabled: true
+            },
+            call: set_enabled_call
+        },
+
+        refresh: {
+            call: refresh_call
+        },
+
+        rules_list: {
+            args: {
+                action: ''
+            },
+            call: rules_list_call
+        },
+
+        rule_add: {
+            args: {
+                action: '',
+                domain: '',
+                refresh: true
+            },
+            call: rule_add_call
+        },
+
+        rule_delete: {
+            args: {
+                action: '',
+                domain: '',
+                refresh: true
+            },
+            call: rule_delete_call
+        },
+
+        license_update: {
+            args: {
+                license_key: ''
+            },
+            call: license_update_call
         }
     }
 };
