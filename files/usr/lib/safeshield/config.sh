@@ -22,7 +22,6 @@ ss_boot_start_delay_s="30"
 ss_dnsmasq_sanity_check="1"
 ss_debug="0"
 
-ss_file_url_sections=""
 ss_valid_line_count="0"
 
 ss_config_get() {
@@ -37,11 +36,6 @@ ss_config_get() {
 	else
 		printf '%s' "$default"
 	fi
-}
-
-ss_collect_file_url_section() {
-	[ -n "$ss_file_url_sections" ] && ss_file_url_sections="${ss_file_url_sections} "
-	ss_file_url_sections="${ss_file_url_sections}$1"
 }
 
 ss_validate_bool() {
@@ -111,9 +105,6 @@ ss_load_config() {
 	ss_boot_start_delay_s="$(ss_config_get config boot_start_delay_s 30)"
 	ss_dnsmasq_sanity_check="$(ss_config_get config dnsmasq_sanity_check 1)"
 	ss_debug="$(ss_config_get config debug 0)"
-
-	ss_file_url_sections=""
-	config_foreach ss_collect_file_url_section file_url
 
 	ss_validate_config
 }

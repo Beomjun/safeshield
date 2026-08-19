@@ -140,8 +140,6 @@ safeshield_force_download() {
 		return $?
 	fi
 
-	ss_status_reset_source_fields
-
 	ss_mkdirs || {
 		ss_status_mark_failure "mkdir_failed"
 		ss_refresh_lock_close

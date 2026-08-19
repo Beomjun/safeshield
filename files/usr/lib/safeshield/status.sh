@@ -56,28 +56,6 @@ ss_status_set_now() {
 	ss_status_set "$1" "$(ss_now)"
 }
 
-ss_status_set_source_field() {
-	local section="$1"
-	local field="$2"
-	local value="$3"
-
-	ss_status_set "source_${section}_${field}" "$value"
-}
-
-ss_status_reset_source_fields() {
-	local section
-
-	for section in $ss_file_url_sections; do
-		ss_status_set_source_field "$section" name ""
-		ss_status_set_source_field "$section" action ""
-		ss_status_set_source_field "$section" enabled "0"
-		ss_status_set_source_field "$section" url ""
-		ss_status_set_source_field "$section" result ""
-		ss_status_set_source_field "$section" line_count "0"
-		ss_status_set_source_field "$section" size_kb "0"
-	done
-}
-
 ss_status_reset_health_fields() {
 	ss_status_set health_dnsmasq_binary ""
 	ss_status_set health_dnsmasq_confdir ""
