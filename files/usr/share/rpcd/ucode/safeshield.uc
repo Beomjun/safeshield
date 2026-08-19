@@ -7,6 +7,8 @@ let uci = require('uci').cursor();
 const PKG_NAME = 'safeshield';
 const STATUS_FILE = `/dev/shm/${PKG_NAME}.status.json`;
 const BLOCKLIST_FILE = '/tmp/dnsmasq.d/safeshield.blocklist';
+const LOCAL_ALLOWLIST_FILE = '/etc/safeshield/allowlist';
+const LOCAL_BLOCKLIST_FILE = '/etc/safeshield/blocklist';
 const SCHEMA_NAME = 'safeshield.status';
 const SCHEMA_VERSION = 1;
 
@@ -409,8 +411,8 @@ function build_status() {
 
         local_overrides: {
             enabled: apply_local_overrides,
-            allowlist_path: cfg('local_allowlist_path', '/etc/safeshield/allowlist'),
-            blocklist_path: cfg('local_blocklist_path', '/etc/safeshield/blocklist')
+            allowlist_path: LOCAL_ALLOWLIST_FILE,
+            blocklist_path: LOCAL_BLOCKLIST_FILE
         },
 
         blocklist: {

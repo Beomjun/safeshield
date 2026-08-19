@@ -1,2 +1,4 @@
 /etc/safeshield/identity.env
+/etc/safeshield/allowlist
+/etc/safeshield/blocklist
 /etc/config/safeshield
