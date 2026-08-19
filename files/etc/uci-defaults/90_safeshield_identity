@@ -1,5 +1,10 @@
 #!/bin/sh
-set -eu
+set -e
+
+IPKG_INSTROOT="${IPKG_INSTROOT:-}"
+export IPKG_INSTROOT
+PKG_NAME='safeshield'
+export PKG_NAME
 
 # Initialize SafeShield identity once during first boot/package install.
 # The script is also safe to run repeatedly because identity-init never

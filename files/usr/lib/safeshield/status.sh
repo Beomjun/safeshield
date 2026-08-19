@@ -111,12 +111,30 @@ ss_status_mark_failure() {
 }
 
 ss_status_mark_success() {
+	local interval="${1:-0}"
+	local now
+
+	now="$(ss_now)"
 	ss_status_apply clear_messages >/dev/null 2>&1 || true
 	ss_status_set status "ready"
 	ss_status_set stage "done"
-	ss_status_set_now last_success
+	ss_status_set last_success "$now"
 	ss_status_set last_result "success"
 	ss_status_set last_error_code ""
+
+	if is_valid_integer "$interval" && [ "$interval" -gt 0 ] 2>/dev/null; then
+		ss_status_set next_refresh_at "$((now + interval))"
+	fi
+}
+
+ss_status_prepare_refresh() {
+	local last_success
+
+	last_success="$(json get last_success 2>/dev/null)"
+	is_valid_integer "$last_success" || last_success=0
+
+	ss_status_reset
+	ss_status_set last_success "$last_success"
 }
 
 ss_status_set() {

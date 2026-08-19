@@ -6,6 +6,13 @@
 # Variables below are populated by sourced helpers and ss_load_config()
 # shellcheck disable=SC2154
 
+IPKG_INSTROOT="${IPKG_INSTROOT:-}"
+export IPKG_INSTROOT
+if [ -z "${PKG_NAME:-}" ]; then
+	PKG_NAME='safeshield'
+fi
+export PKG_NAME
+
 # shellcheck disable=SC1091
 . "${IPKG_INSTROOT}/usr/share/libubox/jshn.sh"
 # shellcheck disable=SC1091
@@ -238,14 +245,14 @@ ss_runtime_activate_blocklist() {
 }
 
 safeshield_force_download() {
-	local rc
+	local rc refresh_interval
 
 	if ! ss_refresh_lock_open; then
 		log_warn "Another refresh is already running, skipping"
 		return 0
 	fi
 
-	ss_status_reset
+	ss_status_prepare_refresh
 	ss_status_set status "running"
 	ss_status_set stage "init"
 	ss_status_set_now last_attempt
@@ -257,6 +264,11 @@ safeshield_force_download() {
 		ss_refresh_lock_close
 		return 1
 	}
+
+	refresh_interval="$(ss_config_get config refresh_interval_s 21600)"
+	if ! is_valid_integer "$refresh_interval" || [ "$refresh_interval" -le 0 ] 2>/dev/null; then
+		refresh_interval=21600
+	fi
 
 	if [ "${ss_enabled}" != "1" ]; then
 		log_warn "SafeShield refresh skipped because the service is disabled"
@@ -511,7 +523,7 @@ safeshield_force_download() {
 			log_ok "SafeShield applied successfully"
 			ss_status_set health_blocklist_verify "1"
 			ss_status_set blocklist_verification_ok "1"
-			ss_status_mark_success
+			ss_status_mark_success "$refresh_interval"
 			rm -f "${SS_PREV_BLOCKLIST_GZ}" "${SS_INACTIVE_BLOCKLIST_FILE}"
 			ss_status_set blocklist_backup_available "0"
 			ss_refresh_lock_close

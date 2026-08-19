@@ -6,8 +6,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.3.5
-PKG_RELEASE:=23
+PKG_VERSION:=0.3.6
+PKG_RELEASE:=26
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -70,21 +70,31 @@ endef
 
 define Package/safeshield/postinst
 #!/bin/sh
+IPKG_INSTROOT="$${IPKG_INSTROOT:-}"
+export IPKG_INSTROOT
+PKG_NAME='safeshield'
+export PKG_NAME
 if [ -z "$${IPKG_INSTROOT}" ]; then
 	mkdir -p /etc/safeshield
 	if [ -r /usr/lib/safeshield/identity.sh ]; then
-		. /lib/functions.sh 2>/dev/null || true
-		. /lib/functions/system.sh 2>/dev/null || true
-		. /usr/lib/safeshield/utils.sh 2>/dev/null || true
-		. /usr/lib/safeshield/log.sh 2>/dev/null || true
-		. /usr/lib/safeshield/status.sh 2>/dev/null || true
-		. /usr/lib/safeshield/config.sh 2>/dev/null || true
-		. /usr/lib/safeshield/identity.sh 2>/dev/null || true
-		. /usr/lib/safeshield/blocklist.sh 2>/dev/null || true
-		ss_load_config >/dev/null 2>&1 || true
-		model="$(ss_detect_device_model 2>/dev/null || cat /tmp/sysinfo/model 2>/dev/null || echo OpenWrt)"
-		arch="$(ss_detect_device_arch 2>/dev/null || uname -m 2>/dev/null || echo unknown)"
-		ss_identity_ensure "$model" "$arch" >/dev/null 2>&1 || true
+		(
+			# apk may execute package lifecycle scripts with nounset enabled.
+			# Runtime helpers are intentionally compatible with normal OpenWrt
+			# /bin/sh semantics, so isolate them from the package-manager shell.
+			set +u
+			. /lib/functions.sh 2>/dev/null || true
+			. /lib/functions/system.sh 2>/dev/null || true
+			. /usr/lib/safeshield/utils.sh 2>/dev/null || true
+			. /usr/lib/safeshield/log.sh 2>/dev/null || true
+			. /usr/lib/safeshield/status.sh 2>/dev/null || true
+			. /usr/lib/safeshield/config.sh 2>/dev/null || true
+			. /usr/lib/safeshield/identity.sh 2>/dev/null || true
+			. /usr/lib/safeshield/blocklist.sh 2>/dev/null || true
+			ss_load_config >/dev/null 2>&1 || true
+			model="$(ss_detect_device_model 2>/dev/null || cat /tmp/sysinfo/model 2>/dev/null || echo OpenWrt)"
+			arch="$(ss_detect_device_arch 2>/dev/null || uname -m 2>/dev/null || echo unknown)"
+			ss_identity_ensure "$model" "$arch" >/dev/null 2>&1 || true
+		)
 	fi
 	if [ ! -f /etc/safeshield/allowlist ]; then
 		cat << 'EOF' > /etc/safeshield/allowlist
@@ -104,9 +114,9 @@ EOF
 	chmod 644 /etc/safeshield/allowlist
 	chmod 644 /etc/safeshield/blocklist
 
-	# Enable and start service
+	# Enable and restart service
 	/etc/init.d/safeshield enable >/dev/null 2>&1 || true
-	/etc/init.d/safeshield start >/dev/null 2>&1 || true
+	/etc/init.d/safeshield restart >/dev/null 2>&1 || true
 
 	# Reload rpcd for LuCI integration
 	if [ -x /etc/init.d/rpcd ]; then
@@ -119,6 +129,8 @@ endef
 
 define Package/safeshield/prerm
 #!/bin/sh
+IPKG_INSTROOT="$${IPKG_INSTROOT:-}"
+export IPKG_INSTROOT
 if [ -z "$${IPKG_INSTROOT}" ]; then
 	echo -n "Stopping safeshield service... "
 	/etc/init.d/safeshield stop >/dev/null 2>&1 && echo "OK" || echo "FAIL"
