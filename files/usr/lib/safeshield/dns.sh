@@ -77,10 +77,15 @@ dnsmasq_restart() {
 		11 12 13 14 15 16 17 18 19 20 \
 		21 22 23 24 25 26 27 28 29 30; do
 		ss_should_stop && return 130
-		nslookup localhost 127.0.0.1 >/dev/null 2>&1 && break
+
+		if check_dnsmasq_process && nslookup localhost 127.0.0.1 >/dev/null 2>&1; then
+			log_ok "dnsmasq restart done"
+			return 0
+		fi
+
 		sleep 1
 	done
 
-	log_ok "dnsmasq restart done"
-	return 0
+	log_error "dnsmasq did not become ready after restart"
+	return 1
 }

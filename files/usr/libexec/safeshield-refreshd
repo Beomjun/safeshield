@@ -78,6 +78,7 @@ main() {
 
 	ss_load_config || exit 1
 	ss_status_reset || true
+	ss_sync_blocklist_status
 	ss_status_set status "idle"
 	ss_status_set stage "starting"
 
@@ -126,8 +127,14 @@ main() {
 		safeshield_force_download
 	done
 
-	ss_status_set status "idle"
-	ss_status_set stage "stopped"
+	ss_load_config >/dev/null 2>&1 || true
+	if [ "${ss_enabled:-0}" = "1" ]; then
+		ss_status_set status "idle"
+		ss_status_set stage "stopped"
+	else
+		ss_status_set status "disabled"
+		ss_status_set stage "disabled"
+	fi
 	clear_next_refresh_at
 }
 

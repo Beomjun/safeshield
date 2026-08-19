@@ -26,6 +26,7 @@
 readonly SS_TMP_DIR="/tmp/safeshield"
 readonly SS_DNSMASQ_DIR="/tmp/dnsmasq.d"
 readonly SS_BLOCKLIST_FILE="${SS_DNSMASQ_DIR}/safeshield.blocklist"
+readonly SS_INACTIVE_BLOCKLIST_FILE="${SS_TMP_DIR}/inactive.blocklist"
 readonly SS_LOCAL_ALLOWLIST_FILE="/etc/safeshield/allowlist"
 readonly SS_LOCAL_BLOCKLIST_FILE="/etc/safeshield/blocklist"
 readonly SS_IDENTITY_DIR="/etc/safeshield"
@@ -106,6 +107,136 @@ ss_ensure_dnsmasq_confdir() {
 	return 0
 }
 
+ss_sync_blocklist_status() {
+	local file_size_kb valid_line_count
+
+	if [ ! -f "${SS_BLOCKLIST_FILE}" ]; then
+		ss_status_set blocklist_installed "0"
+		ss_status_set blocklist_file_size_kb "0"
+		ss_status_set valid_line_count "0"
+		ss_status_set blocklist_verification_ok "0"
+		ss_status_set health_blocklist_verify ""
+		return 0
+	fi
+
+	file_size_kb="$(du -k "${SS_BLOCKLIST_FILE}" 2>/dev/null | awk '{print $1}')"
+	valid_line_count="$(grep -c . "${SS_BLOCKLIST_FILE}" 2>/dev/null)"
+
+	[ -n "$file_size_kb" ] || file_size_kb="0"
+	[ -n "$valid_line_count" ] || valid_line_count="0"
+
+	ss_status_set blocklist_installed "1"
+	ss_status_set blocklist_file_size_kb "$file_size_kb"
+	ss_status_set valid_line_count "$valid_line_count"
+}
+
+ss_stage_active_blocklist() {
+	[ -f "${SS_BLOCKLIST_FILE}" ] || return 0
+
+	rm -f "${SS_INACTIVE_BLOCKLIST_FILE}"
+	ss_sync_path "${SS_BLOCKLIST_FILE}"
+	mv -f "${SS_BLOCKLIST_FILE}" "${SS_INACTIVE_BLOCKLIST_FILE}" || return 1
+	ss_sync_path "${SS_DNSMASQ_DIR}"
+	ss_sync_path "${SS_TMP_DIR}"
+	return 0
+}
+
+ss_restore_staged_blocklist() {
+	[ -f "${SS_INACTIVE_BLOCKLIST_FILE}" ] || return 1
+
+	mv -f "${SS_INACTIVE_BLOCKLIST_FILE}" "${SS_BLOCKLIST_FILE}" || return 1
+	ss_sync_path "${SS_DNSMASQ_DIR}"
+	return 0
+}
+
+ss_runtime_deactivate_blocklist() {
+	local rc
+
+	ss_mkdirs || return 1
+
+	if [ ! -f "${SS_BLOCKLIST_FILE}" ]; then
+		ss_sync_blocklist_status
+		return 0
+	fi
+
+	log_info "Deactivating SafeShield blocklist"
+	ss_stage_active_blocklist || {
+		log_error "Failed to stage active blocklist for deactivation"
+		return 1
+	}
+
+	dnsmasq_restart
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		log_error "dnsmasq restart failed while deactivating SafeShield; restoring blocklist"
+		ss_restore_staged_blocklist >/dev/null 2>&1 || true
+		dnsmasq_restart >/dev/null 2>&1 || true
+		ss_sync_blocklist_status
+		return "$rc"
+	fi
+
+	ss_sync_blocklist_status
+	ss_status_set health_dnsmasq_final_restart "1"
+	log_ok "SafeShield blocklist deactivated"
+	return 0
+}
+
+ss_runtime_activate_blocklist() {
+	local rc
+
+	ss_mkdirs || return 1
+
+	if [ ! -f "${SS_BLOCKLIST_FILE}" ] && [ -f "${SS_INACTIVE_BLOCKLIST_FILE}" ]; then
+		log_info "Restoring staged SafeShield blocklist"
+		ss_restore_staged_blocklist || {
+			log_error "Failed to restore staged SafeShield blocklist"
+			return 1
+		}
+	fi
+
+	if [ ! -f "${SS_BLOCKLIST_FILE}" ]; then
+		ss_sync_blocklist_status
+		return 0
+	fi
+
+	ss_ensure_dnsmasq_confdir || {
+		log_error "dnsmasq confdir is unavailable while activating SafeShield"
+		ss_stage_active_blocklist >/dev/null 2>&1 || true
+		ss_sync_blocklist_status
+		return 1
+	}
+
+	dnsmasq_restart
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		log_error "dnsmasq restart failed while activating SafeShield"
+		ss_stage_active_blocklist >/dev/null 2>&1 || true
+		dnsmasq_restart >/dev/null 2>&1 || true
+		ss_sync_blocklist_status
+		return "$rc"
+	fi
+
+	check_blocklist_applied_multi_with_stats 5 3
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		log_error "SafeShield blocklist is not active in dnsmasq"
+		ss_status_set health_blocklist_verify "0"
+		ss_status_set blocklist_verification_ok "0"
+		ss_stage_active_blocklist >/dev/null 2>&1 || true
+		dnsmasq_restart >/dev/null 2>&1 || true
+		ss_sync_blocklist_status
+		return "$rc"
+	fi
+
+	rm -f "${SS_INACTIVE_BLOCKLIST_FILE}"
+	ss_sync_blocklist_status
+	ss_status_set health_dnsmasq_final_restart "1"
+	ss_status_set health_blocklist_verify "1"
+	ss_status_set blocklist_verification_ok "1"
+	log_ok "SafeShield blocklist active in dnsmasq"
+	return 0
+}
+
 safeshield_force_download() {
 	local rc
 
@@ -126,6 +257,16 @@ safeshield_force_download() {
 		ss_refresh_lock_close
 		return 1
 	}
+
+	if [ "${ss_enabled}" != "1" ]; then
+		log_warn "SafeShield refresh skipped because the service is disabled"
+		ss_status_set status "disabled"
+		ss_status_set stage "disabled"
+		ss_status_set last_result "disabled"
+		ss_status_set next_refresh_at "0"
+		ss_refresh_lock_close
+		return 0
+	fi
 
 	ss_sync_detected_device_config || true
 
@@ -371,7 +512,7 @@ safeshield_force_download() {
 			ss_status_set health_blocklist_verify "1"
 			ss_status_set blocklist_verification_ok "1"
 			ss_status_mark_success
-			rm -f "${SS_PREV_BLOCKLIST_GZ}"
+			rm -f "${SS_PREV_BLOCKLIST_GZ}" "${SS_INACTIVE_BLOCKLIST_FILE}"
 			ss_status_set blocklist_backup_available "0"
 			ss_refresh_lock_close
 			return 0

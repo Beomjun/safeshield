@@ -14,7 +14,7 @@ USE_PROCD=1
 LC_ALL=C
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.3.4'
+readonly PKG_VERSION='0.3.5'
 
 if type extra_command >/dev/null 2>&1; then
 	extra_command 'delete_cache' 'Delete all cached files'
@@ -49,13 +49,26 @@ start_service() {
 		return 1
 	}
 
+	ss_mkdirs || {
+		log_error "Failed to create runtime directories"
+		return 1
+	}
+
 	if [ "${ss_enabled}" != "1" ]; then
 		log_warn "${PKG_NAME} is disabled"
+		ss_runtime_deactivate_blocklist || {
+			log_error "Failed to deactivate SafeShield blocklist"
+			return 1
+		}
+		ss_status_set status "disabled"
+		ss_status_set stage "disabled"
+		ss_status_set last_result "disabled"
+		ss_status_set next_refresh_at "0"
 		return 0
 	fi
 
-	ss_mkdirs || {
-		log_error "Failed to create runtime directories"
+	ss_runtime_activate_blocklist || {
+		log_error "Failed to activate SafeShield blocklist"
 		return 1
 	}
 
@@ -70,6 +83,24 @@ start_service() {
 }
 
 stop_service() {
+	ss_load_config >/dev/null 2>&1 || true
+
+	ss_runtime_deactivate_blocklist || {
+		log_error "Failed to deactivate SafeShield blocklist while stopping service"
+		return 1
+	}
+
+	ss_status_set next_refresh_at "0"
+	if [ "${ss_enabled:-0}" = "1" ]; then
+		ss_status_set status "idle"
+		ss_status_set stage "stopped"
+		ss_status_set last_result "stopped"
+	else
+		ss_status_set status "disabled"
+		ss_status_set stage "disabled"
+		ss_status_set last_result "disabled"
+	fi
+
 	return 0
 }
 
@@ -169,8 +200,10 @@ force_download() {
 delete_cache() {
 	log_info "Deleting safeshield cache files"
 
+	ss_load_config >/dev/null 2>&1 || true
+	ss_runtime_deactivate_blocklist || return 1
 	rm -rf "${SS_TMP_DIR}"
-	rm -f "${SS_PREV_BLOCKLIST_GZ}" "${SS_BLOCKLIST_FILE}"
+	rm -f "${SS_PREV_BLOCKLIST_GZ}" "${SS_INACTIVE_BLOCKLIST_FILE}"
 }
 
 pause() {
