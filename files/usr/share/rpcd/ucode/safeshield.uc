@@ -31,7 +31,7 @@ const CONFIG_SPEC = {
     pause_timeout: { kind: 'int', def: 20, min: 1, max: 86400 },
     boot_start_delay_s: { kind: 'int', def: 30, min: 0, max: 86400 },
     refresh_on_boot: { kind: 'bool', def: true },
-    refresh_interval_s: { kind: 'int', def: 21600, min: 1, max: 2147483647 },
+    refresh_interval_s: { kind: 'int', def: 28800, min: 1, max: 2147483647 },
     require_wan: { kind: 'bool', def: true },
     debug: { kind: 'bool', def: false }
 };
@@ -292,7 +292,7 @@ function build_status() {
     let enabled = to_bool(cfg('enabled', '0'), false);
     let refresh_on_boot = to_bool(cfg('refresh_on_boot', '1'), true);
     let require_wan = to_bool(cfg('require_wan', '1'), true);
-    let refresh_interval_s = to_int(cfg('refresh_interval_s', '21600'), 21600);
+    let refresh_interval_s = to_int(cfg('refresh_interval_s', '28800'), 28800);
     let boot_start_delay_s = to_int(cfg('boot_start_delay_s', '30'), 30);
 
     let license_key = cfg('license_key', '');

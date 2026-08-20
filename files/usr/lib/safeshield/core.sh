@@ -533,9 +533,9 @@ safeshield_force_download() {
 		return 1
 	}
 
-	refresh_interval="$(ss_config_get config refresh_interval_s 21600)"
+	refresh_interval="$(ss_config_get config refresh_interval_s 28800)"
 	if ! is_valid_integer "$refresh_interval" || [ "$refresh_interval" -le 0 ] 2>/dev/null; then
-		refresh_interval=21600
+		refresh_interval=28800
 	fi
 
 	if [ "${ss_enabled}" != "1" ]; then

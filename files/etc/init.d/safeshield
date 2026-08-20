@@ -132,7 +132,7 @@ status_service() {
 	fi
 
 	enabled="$(ss_config_get config enabled 0)"
-	refresh_interval_s="$(ss_config_get config refresh_interval_s 21600)"
+	refresh_interval_s="$(ss_config_get config refresh_interval_s 28800)"
 	refresh_on_boot="$(ss_config_get config refresh_on_boot 1)"
 	require_wan="$(ss_config_get config require_wan 1)"
 	boot_delay="$(ss_config_get config boot_start_delay_s 30)"

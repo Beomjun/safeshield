@@ -253,7 +253,7 @@ intentionally excluded and have dedicated methods:
 ```sh
 ubus call safeshield config_update '{
   "values": {
-    "refresh_interval_s": 21600,
+    "refresh_interval_s": 28800,
     "refresh_on_boot": true,
     "require_wan": true,
     "apply_local_overrides": true

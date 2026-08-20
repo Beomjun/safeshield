@@ -27,7 +27,7 @@ config safeshield 'config'
 	option pause_timeout '20'
 	option boot_start_delay_s '30'
 	option refresh_on_boot '1'
-	option refresh_interval_s '21600'
+	option refresh_interval_s '28800'
 	option require_wan '1'
 	option debug '0'
 
