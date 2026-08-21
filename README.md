@@ -238,6 +238,7 @@ safeshield.refresh
 safeshield.rules_list
 safeshield.rule_add
 safeshield.rule_delete
+safeshield.license_get
 safeshield.license_update
 ```
 
@@ -322,7 +323,17 @@ ubus call safeshield rule_delete '{
 
 `rule_add` and `rule_delete` keep the public SafeShield API unchanged, but their automatic apply path no longer performs a full Hub artifact refresh. SafeShield retains the normalized Hub domains in `/tmp/safeshield/api.block.txt`, rebuilds only the local allow/block inputs, merges them atomically, restarts dnsmasq, and verifies runtime DNS. The local apply worker shares the normal refresh lock, so a rule edit made during a full refresh waits for that refresh and then reapplies the newest local state. If the cached Hub artifact is missing, SafeShield falls back to one normal full refresh.
 
-Update or clear the license key. The raw key is never returned by the API.
+Read the raw license key only when an authenticated management client explicitly
+requests it. Normal `status`, `config` and `license_update` responses continue to
+return only masked license metadata.
+
+```sh
+ubus call safeshield license_get
+```
+
+Update or clear the license key. Passing an empty string removes the configured
+key and immediately requests a SafeShield refresh so the device is resolved as
+unlicensed/free again.
 
 ```sh
 ubus call safeshield license_update '{"license_key":"YOUR-LICENSE-KEY"}'
@@ -330,8 +341,8 @@ ubus call safeshield license_update '{"license_key":""}'
 ```
 
 The package also installs an rpcd ACL named `safeshield`. Read access covers
-`status`, `config` and `rules_list`; mutating methods are declared as write
-access.
+`status`, `config` and `rules_list`; sensitive license access and mutating
+methods are declared as write access.
 
 ## Contributors
 

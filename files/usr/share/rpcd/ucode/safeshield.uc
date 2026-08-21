@@ -1154,6 +1154,20 @@ function rule_delete_call(request) {
     };
 }
 
+function license_get_call() {
+    reload_uci();
+
+    let key = cfg('license_key', '');
+
+    return {
+        ok: true,
+        license: {
+            configured: !!key,
+            key: key
+        }
+    };
+}
+
 function license_update_call(request) {
     reload_uci();
 
@@ -1261,6 +1275,10 @@ return {
                 refresh: true
             },
             call: rule_delete_call
+        },
+
+        license_get: {
+            call: license_get_call
         },
 
         license_update: {

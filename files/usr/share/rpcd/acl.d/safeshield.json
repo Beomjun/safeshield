@@ -18,6 +18,7 @@
           "refresh",
           "rule_add",
           "rule_delete",
+          "license_get",
           "license_update"
         ]
       }
