@@ -1,5 +1,9 @@
-## [Unreleased]
+## [0.3.10-r34] - 2026-08-26
 
+- Refactor the 1,300+ line rpcd ucode implementation into focused modules under `/usr/share/rpcd/ucode/safeshield/`.
+- Keep all SafeShield rpcd ucode sources together under the rpcd plugin tree instead of installing private modules under `/usr/share/ucode`.
+- Keep `/usr/share/rpcd/ucode/safeshield.uc` as a small ubus registration entrypoint while preserving existing RPC names, arguments, and response schemas.
+- Separate shared UCI/helpers, runtime lifecycle, status, configuration, local rules, refresh, and license logic to reduce coupling.
 - Treat an absent `license_key` UCI option as the canonical unlicensed state and clear it explicitly with `uci.delete()` instead of relying on the ucode UCI empty-string deletion side effect.
 - Add `safeshield.license_get` for explicit authenticated retrieval of the configured raw license key while keeping normal status/config responses masked.
 - Keep license removal on `safeshield.license_update` with an empty key and document the refresh/unlicensed transition.

@@ -221,6 +221,26 @@ ubus call safeshield status
 logread | grep -i safeshield
 ```
 
+## Internal rpcd ucode layout
+
+SafeShield keeps the rpcd registration entrypoint intentionally small and loads feature modules from `/usr/share/rpcd/ucode/safeshield/`:
+
+```text
+/usr/share/rpcd/ucode/safeshield.uc
+/usr/share/rpcd/ucode/safeshield/
+├── core.uc
+├── runtime.uc
+├── status.uc
+├── config.uc
+├── refresh.uc
+├── rules.uc
+└── license.uc
+```
+
+The entrypoint prepends `/usr/share/rpcd/ucode/safeshield/*.uc` to ucode's `REQUIRE_SEARCH_PATH`, so the private RPC modules stay colocated with the rpcd plugin instead of using the global `/usr/share/ucode` tree.
+
+The public ubus contract remains exposed through the single `safeshield` object; the module split is an internal implementation detail.
+
 ## SafeShield ubus API
 
 The `safeshield` package owns the public management API used by LuCI and
