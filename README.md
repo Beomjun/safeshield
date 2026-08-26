@@ -332,8 +332,10 @@ ubus call safeshield license_get
 ```
 
 Update or clear the license key. Passing an empty string removes the configured
-key and immediately requests a SafeShield refresh so the device is resolved as
-unlicensed/free again.
+UCI option and immediately requests a SafeShield refresh so the device is resolved
+as unlicensed/free again. SafeShield intentionally treats an absent `license_key`
+option as the canonical unlicensed state; all runtime readers fall back to an empty
+key when the option is not present.
 
 ```sh
 ubus call safeshield license_update '{"license_key":"YOUR-LICENSE-KEY"}'

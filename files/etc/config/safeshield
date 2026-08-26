@@ -2,9 +2,6 @@ config safeshield 'config'
 	option enabled '1'
 	option verbosity '2'
 
-	# License
-	option license_key ''
-
 	# Device identity / profile
 	option device_vendor ''
 	option device_model ''

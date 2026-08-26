@@ -1,5 +1,6 @@
 ## [Unreleased]
 
+- Treat an absent `license_key` UCI option as the canonical unlicensed state and clear it explicitly with `uci.delete()` instead of relying on the ucode UCI empty-string deletion side effect.
 - Add `safeshield.license_get` for explicit authenticated retrieval of the configured raw license key while keeping normal status/config responses masked.
 - Keep license removal on `safeshield.license_update` with an empty key and document the refresh/unlicensed transition.
 

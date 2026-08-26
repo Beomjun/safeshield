@@ -530,6 +530,20 @@ function uci_commit_option(name, value) {
     return true;
 }
 
+function uci_delete_option(name) {
+    if (!uci.delete(PKG_NAME, 'config', name)) {
+        return false;
+    }
+
+    if (!uci.commit(PKG_NAME)) {
+        uci.revert(PKG_NAME);
+        return false;
+    }
+
+    reload_uci();
+    return true;
+}
+
 function bool_uci(v) {
     return v ? '1' : '0';
 }
@@ -1199,7 +1213,11 @@ function license_update_call(request) {
         };
     }
 
-    if (!uci_commit_option('license_key', key)) {
+    let saved = key == ''
+        ? uci_delete_option('license_key')
+        : uci_commit_option('license_key', key);
+
+    if (!saved) {
         return api_error('uci_commit_failed', 'Failed to update the SafeShield license key');
     }
 
