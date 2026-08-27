@@ -6,8 +6,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.3.10
-PKG_RELEASE:=34
+PKG_VERSION:=0.3.11
+PKG_RELEASE:=35
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -20,7 +20,26 @@ define Package/safeshield
   CATEGORY:=Network
   TITLE:=SafeShield DNS Block Service
   URL:=https://github.com/Junatum/safeshield
-  DEPENDS:=+jshn +uclient-fetch +dnsmasq +gzip +coreutils-sort +grep +sed +procd +rpcd +rpcd-mod-ucode +ucode +ucode-mod-fs +ucode-mod-ubus +ucode-mod-uci
+  DEPENDS:= \
+	+jshn \
+	+jsonfilter \
+	+uci \
+	+uclient-fetch \
+	+dnsmasq \
+	+gzip \
+	+coreutils-sort \
+	+coreutils-cksum \
+	+!BUSYBOX_DEFAULT_SHA256SUM:coreutils-sha256sum \
+	+!BUSYBOX_DEFAULT_AWK:gawk \
+	+!BUSYBOX_DEFAULT_GREP:grep \
+	+!BUSYBOX_DEFAULT_SED:sed \
+	+procd \
+	+rpcd \
+	+rpcd-mod-ucode \
+	+ucode \
+	+ucode-mod-fs \
+	+ucode-mod-ubus \
+	+ucode-mod-uci
   PKGARCH:=all
 endef
 

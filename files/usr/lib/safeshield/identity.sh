@@ -39,14 +39,12 @@ ss_identity_command_exists() {
 ss_identity_sha256() {
 	local value="$1"
 
-	if ss_identity_command_exists sha256sum; then
-		printf '%s' "$value" | sha256sum | awk '{print $1}'
-		return 0
+	if ! ss_identity_command_exists sha256sum; then
+		ss_identity_log_warn "sha256sum is required for identity hashing"
+		return 1
 	fi
 
-	# sha256sum is expected on SafeShield target images. This fallback only
-	# prevents hard failure on very small local test images.
-	printf '%s' "$value" | cksum | awk '{print $1}'
+	printf '%s' "$value" | sha256sum | awk '{print $1}'
 }
 
 ss_identity_random_hex_32() {
@@ -296,10 +294,10 @@ ss_identity_compute_physical() {
 				SS_IDENTITY_PROVIDER="factory_device_id"
 				SS_IDENTITY_SOURCE="$source"
 				SS_IDENTITY_STRENGTH="hardware_strong"
-				SS_IDENTITY_VALUE_SHA256="$(ss_identity_sha256 "$value")"
+				SS_IDENTITY_VALUE_SHA256="$(ss_identity_sha256 "$value")" || return 1
 
 				material="safeshield-physical-v1|provider=${SS_IDENTITY_PROVIDER}|source=${SS_IDENTITY_SOURCE}|profile=${profile}|value_sha256=${SS_IDENTITY_VALUE_SHA256}"
-				SS_PHYSICAL_FINGERPRINT="$(ss_identity_sha256 "$material")"
+				SS_PHYSICAL_FINGERPRINT="$(ss_identity_sha256 "$material")" || return 1
 				return 0
 			fi
 			;;
@@ -314,10 +312,10 @@ ss_identity_compute_physical() {
 		SS_IDENTITY_PROVIDER="factory_mac"
 		SS_IDENTITY_SOURCE="$source"
 		SS_IDENTITY_STRENGTH="hardware_soft"
-		SS_IDENTITY_VALUE_SHA256="$(ss_identity_sha256 "$value")"
+		SS_IDENTITY_VALUE_SHA256="$(ss_identity_sha256 "$value")" || return 1
 
 		material="safeshield-physical-v1|provider=${SS_IDENTITY_PROVIDER}|source=${SS_IDENTITY_SOURCE}|profile=${profile}|mac_sha256=${SS_IDENTITY_VALUE_SHA256}"
-		SS_PHYSICAL_FINGERPRINT="$(ss_identity_sha256 "$material")"
+		SS_PHYSICAL_FINGERPRINT="$(ss_identity_sha256 "$material")" || return 1
 		return 0
 	fi
 
@@ -328,9 +326,9 @@ ss_identity_compute_physical() {
 		SS_IDENTITY_PROVIDER="interface_mac"
 		SS_IDENTITY_SOURCE="sysfs:/sys/class/net/*/address"
 		SS_IDENTITY_STRENGTH="hardware_soft_unverified"
-		SS_IDENTITY_VALUE_SHA256="$(ss_identity_sha256 "$value")"
+		SS_IDENTITY_VALUE_SHA256="$(ss_identity_sha256 "$value")" || return 1
 		material="safeshield-physical-v1|provider=${SS_IDENTITY_PROVIDER}|source=${SS_IDENTITY_SOURCE}|profile=${profile}|model=${model}|arch=${arch}|mac_sha256=${SS_IDENTITY_VALUE_SHA256}"
-		SS_PHYSICAL_FINGERPRINT="$(ss_identity_sha256 "$material")"
+		SS_PHYSICAL_FINGERPRINT="$(ss_identity_sha256 "$material")" || return 1
 		return 0
 	fi
 
@@ -440,8 +438,8 @@ ss_identity_create() {
 		SS_IDENTITY_SOURCE="${SS_IDENTITY_FILE}"
 		SS_IDENTITY_STRENGTH="fallback_random"
 		SS_IDENTITY_PROFILE="$(ss_identity_profile_code "$(ss_identity_board_name)")"
-		SS_IDENTITY_VALUE_SHA256="$(ss_identity_sha256 "$value")"
-		SS_PHYSICAL_FINGERPRINT="$(ss_identity_sha256 "safeshield-physical-v1|provider=installation_random|profile=${SS_IDENTITY_PROFILE}|value_sha256=${SS_IDENTITY_VALUE_SHA256}")"
+		SS_IDENTITY_VALUE_SHA256="$(ss_identity_sha256 "$value")" || return 1
+		SS_PHYSICAL_FINGERPRINT="$(ss_identity_sha256 "safeshield-physical-v1|provider=installation_random|profile=${SS_IDENTITY_PROFILE}|value_sha256=${SS_IDENTITY_VALUE_SHA256}")" || return 1
 		ss_identity_log_warn "No stable hardware identity source found; using installation-random physical_fingerprint"
 	fi
 

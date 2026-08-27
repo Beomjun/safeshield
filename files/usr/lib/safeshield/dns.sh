@@ -30,7 +30,7 @@ check_dnsmasq_binary() {
 }
 
 check_dnsmasq_process() {
-	pgrep -x dnsmasq >/dev/null 2>&1
+	pidof dnsmasq >/dev/null 2>&1
 }
 
 check_dns_runtime() {

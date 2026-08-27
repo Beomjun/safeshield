@@ -362,10 +362,10 @@ ss_verify_artifact_sha256() {
 	esac
 
 	command_exists sha256sum || {
-		log_warn "sha256sum not found; skipping artifact checksum verification"
-		ss_status_add_warning "sha256sum_not_found"
-		ss_status_set health_artifact_sha256 ""
-		return 0
+		log_error "sha256sum not found; artifact checksum verification cannot continue"
+		ss_status_set health_artifact_sha256 "0"
+		ss_status_add_error "sha256sum_not_found"
+		return 1
 	}
 
 	actual="$(sha256sum "$file" 2>/dev/null | awk '{print $1}')"

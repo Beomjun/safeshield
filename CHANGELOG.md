@@ -1,3 +1,14 @@
+## [0.3.11-r35] - 2026-08-27
+
+- Declare `coreutils-cksum` as a runtime dependency because SafeShield uses `cksum` to fingerprint normalized local allow/block rules.
+- Ensure the existing identity hash fallback also has a guaranteed `cksum` implementation on minimal OpenWrt images such as GL-MT300N-V2.
+- Fix false dnsmasq restart/runtime failures on OpenWrt targets where `pgrep -x dnsmasq` does not match the running dnsmasq process.
+- Use the base-system `pidof` applet for dnsmasq process detection, while retaining the existing DNS query readiness check.
+- Declare direct runtime dependencies for the `uci` CLI and `jsonfilter` used by SafeShield shell helpers.
+- Use BusyBox-aware fallback dependencies for `sha256sum`, `awk`, `grep`, and `sed` so minimal OpenWrt images install GNU implementations only when the corresponding BusyBox applet is disabled.
+- Remove the invalid `cksum` fallback from identity SHA-256 generation; CRC output is not a SHA-256 digest and cannot satisfy the identity format.
+- Fail closed when artifact SHA-256 verification cannot run instead of silently accepting an unverified artifact.
+
 ## [0.3.10-r34] - 2026-08-26
 
 - Refactor the 1,300+ line rpcd ucode implementation into focused modules under `/usr/share/rpcd/ucode/safeshield/`.
