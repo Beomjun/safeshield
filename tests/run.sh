@@ -4,5 +4,5 @@ set -eu
 
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 
-"$ROOT/tests/test_dnsmasq_version.sh"
-"$ROOT/tests/test_blocklist_format.sh"
+sh "$ROOT/tests/test_dnsmasq_version.sh"
+sh "$ROOT/tests/test_blocklist_format.sh"

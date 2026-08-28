@@ -72,4 +72,4 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: ./tests/run.sh
+        run: sh ./tests/run.sh
