@@ -1,3 +1,7 @@
+## [0.3.13-r1] - 2026-08-28
+
+- Bump version for release.
+
 ## [0.3.12-r2] - 2026-08-28
 
 - Fix ShellCheck warnings in the dnsmasq compatibility helper and regression test scripts.
