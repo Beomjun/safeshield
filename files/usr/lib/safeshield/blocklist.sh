@@ -18,6 +18,7 @@ ss_normalize_domains() {
 		-e 's#^address=/##' \
 		-e 's#/0\.0\.0\.0$##' \
 		-e 's#/::$##' \
+		-e 's|/#$||' \
 		-e 's#/$##' \
 		-e 's#^/##'
 }
@@ -516,8 +517,7 @@ ss_merge_lists() {
                         }
                     }
 
-                    print "address=/" $0 "/0.0.0.0"
-                    print "address=/" $0 "/::"
+                    print "address=/" $0 "/#"
                 }
             ' "$allowlist" "${SS_TMP_DIR}"/*.block.txt >"$final" || {
 				rm -f "$final"
@@ -530,8 +530,7 @@ ss_merge_lists() {
                         next
                     }
 
-                    print "address=/" $0 "/0.0.0.0"
-                    print "address=/" $0 "/::"
+                    print "address=/" $0 "/#"
                 }
             ' "${SS_TMP_DIR}"/*.block.txt >"$final" || {
 				rm -f "$final"
@@ -622,7 +621,7 @@ find_test_domains() {
 	[ -f "${SS_BLOCKLIST_FILE}" ] || return 1
 
 	awk -F'/' '
-        $1 == "address=" && ($3 == "0.0.0.0" || $3 == "::") {
+        $1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::") {
             if (!seen[$2]++) {
                 print $2
             }
@@ -637,7 +636,7 @@ check_blocklist_rule_present() {
 	[ -f "${SS_BLOCKLIST_FILE}" ] || return 1
 
 	awk -F'/' -v d="$domain" '
-        $1 == "address=" && $2 == d && ($3 == "0.0.0.0" || $3 == "::") {
+        $1 == "address=" && $2 == d && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::") {
             found = 1
         }
         END {

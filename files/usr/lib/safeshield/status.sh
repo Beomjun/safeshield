@@ -58,6 +58,7 @@ ss_status_set_now() {
 
 ss_status_reset_health_fields() {
 	ss_status_set health_dnsmasq_binary ""
+	ss_status_set health_dnsmasq_version ""
 	ss_status_set health_dnsmasq_confdir ""
 	ss_status_set health_dnsmasq_initial_restart ""
 	ss_status_set health_dnsmasq_final_restart ""
@@ -68,6 +69,8 @@ ss_status_reset_health_fields() {
 	ss_status_set health_api_resolve ""
 	ss_status_set health_artifact_download ""
 	ss_status_set health_artifact_sha256 ""
+	ss_status_set dnsmasq_version ""
+	ss_status_set dnsmasq_min_version "${SS_MIN_DNSMASQ_VERSION:-2.80}"
 }
 
 ss_status_reset_blocklist_fields() {

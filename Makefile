@@ -6,8 +6,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.3.11
-PKG_RELEASE:=35
+PKG_VERSION:=0.3.12
+PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -40,6 +40,7 @@ define Package/safeshield
 	+ucode-mod-fs \
 	+ucode-mod-ubus \
 	+ucode-mod-uci
+  EXTRA_DEPENDS:=dnsmasq (>= 2.80)
   PKGARCH:=all
 endef
 

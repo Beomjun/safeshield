@@ -69,3 +69,7 @@ jobs:
         run: |
           set -eu
           xargs -r shellcheck -x -S warning < shell-files.txt
+
+      - name: Run tests
+        shell: bash
+        run: ./tests/run.sh

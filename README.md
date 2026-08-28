@@ -38,7 +38,7 @@ and optional local allow/block overrides.
 SafeShield requires the following environment:
 
 - **OpenWrt 25.12 or later**
-- **dnsmasq** (default DNS server in OpenWrt)
+- **dnsmasq 2.80 or later** (required for the optimized `address=/domain/#` block rules)
 - At least **16 MB free flash storage**
 - Internet access for downloading blocklists
 

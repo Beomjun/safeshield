@@ -400,13 +400,11 @@ safeshield_apply_local_rules() {
 		return 0
 	fi
 
-	check_dnsmasq_binary || {
-		ss_status_set health_dnsmasq_binary "0"
-		ss_mark_local_apply_failure "dnsmasq_binary_not_found"
+	ss_require_supported_dnsmasq || {
+		ss_mark_local_apply_failure "${ss_dnsmasq_check_error:-dnsmasq_version_check_failed}"
 		ss_refresh_lock_close
 		return 1
 	}
-	ss_status_set health_dnsmasq_binary "1"
 
 	ss_ensure_dnsmasq_confdir || {
 		ss_status_set health_dnsmasq_confdir "0"
@@ -574,14 +572,11 @@ safeshield_force_download() {
 		return $?
 	fi
 
-	check_dnsmasq_binary || {
-		log_error "dnsmasq binary not found"
-		ss_status_set health_dnsmasq_binary "0"
-		ss_status_mark_failure "dnsmasq_binary_not_found"
+	ss_require_supported_dnsmasq || {
+		ss_status_mark_failure "${ss_dnsmasq_check_error:-dnsmasq_version_check_failed}"
 		ss_refresh_lock_close
 		return 1
 	}
-	ss_status_set health_dnsmasq_binary "1"
 
 	ss_ensure_dnsmasq_confdir || {
 		log_error "dnsmasq confdir could not be configured automatically for ${SS_DNSMASQ_DIR}"

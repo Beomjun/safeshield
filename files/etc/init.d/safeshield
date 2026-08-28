@@ -16,7 +16,7 @@ IPKG_INSTROOT="${IPKG_INSTROOT:-}"
 export IPKG_INSTROOT
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.3.9'
+readonly PKG_VERSION='0.3.12-r1'
 
 if type extra_command >/dev/null 2>&1; then
 	extra_command 'apply_local_rules' 'Apply local allow/block rules using the cached Hub artifact'
@@ -68,6 +68,12 @@ start_service() {
 		ss_status_set next_refresh_at "0"
 		return 0
 	fi
+
+	ss_require_supported_dnsmasq || {
+		ss_status_set stage "dnsmasq_version_check"
+		ss_status_mark_failure "${ss_dnsmasq_check_error:-dnsmasq_version_check_failed}"
+		return 1
+	}
 
 	ss_runtime_activate_blocklist || {
 		log_error "Failed to activate SafeShield blocklist"
@@ -126,6 +132,7 @@ status_service() {
 	local status stage valid_line_count
 	local enabled refresh_interval_s refresh_on_boot require_wan boot_delay
 	local license_key artifact_tier artifact_version license_plan device_profile
+	local dnsmasq_version dnsmasq_min_version
 
 	if ! ss_load_config >/dev/null 2>&1; then
 		printf '%s\n' 'config: load failed'
@@ -150,6 +157,8 @@ status_service() {
 		artifact_version="$(json get artifact_version 2>/dev/null)"
 		license_plan="$(json get license_plan 2>/dev/null)"
 		device_profile="$(json get device_profile 2>/dev/null)"
+		dnsmasq_version="$(json get dnsmasq_version 2>/dev/null)"
+		dnsmasq_min_version="$(json get dnsmasq_min_version 2>/dev/null)"
 	fi
 
 	[ -n "$status" ] || status="idle"
@@ -173,6 +182,8 @@ status_service() {
 	else
 		printf '%s\n' 'dnsmasq: failed'
 	fi
+	[ -n "$dnsmasq_version" ] && printf 'dnsmasq_version: %s\n' "$dnsmasq_version"
+	printf 'dnsmasq_min_version: %s\n' "${dnsmasq_min_version:-$SS_MIN_DNSMASQ_VERSION}"
 
 	printf 'status: %s\n' "$status"
 	[ -n "$stage" ] && printf 'stage: %s\n' "$stage"

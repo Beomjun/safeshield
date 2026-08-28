@@ -1,3 +1,10 @@
+## [0.3.12-r1] - 2026-08-28
+
+- Require dnsmasq 2.80 or later before SafeShield starts, refreshes, or reapplies local rules.
+- Expose the detected and minimum dnsmasq versions through runtime status and health checks.
+- Accept optimized Hub artifacts using `address=/domain/#` and emit the same single-line dual-stack rule in the active dnsmasq blocklist.
+- Keep blocklist verification compatible with both the optimized `/#` rule and legacy `0.0.0.0` / `::` rules.
+
 ## [0.3.11-r35] - 2026-08-27
 
 - Declare `coreutils-cksum` as a runtime dependency because SafeShield uses `cksum` to fingerprint normalized local allow/block rules.
