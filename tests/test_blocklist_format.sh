@@ -2,11 +2,10 @@
 # shellcheck shell=sh
 set -eu
 
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-PKG_NAME='safeshield'
 SS_TMP_DIR="$TMP_DIR/tmp"
 SS_DNSMASQ_DIR="$TMP_DIR/dnsmasq.d"
 SS_BLOCKLIST_FILE="$SS_DNSMASQ_DIR/safeshield.blocklist"

@@ -401,7 +401,7 @@ safeshield_apply_local_rules() {
 	fi
 
 	ss_require_supported_dnsmasq || {
-		ss_mark_local_apply_failure "${ss_dnsmasq_check_error:-dnsmasq_version_check_failed}"
+		ss_mark_local_apply_failure "$(ss_dnsmasq_check_error)"
 		ss_refresh_lock_close
 		return 1
 	}
@@ -573,7 +573,7 @@ safeshield_force_download() {
 	fi
 
 	ss_require_supported_dnsmasq || {
-		ss_status_mark_failure "${ss_dnsmasq_check_error:-dnsmasq_version_check_failed}"
+		ss_status_mark_failure "$(ss_dnsmasq_check_error)"
 		ss_refresh_lock_close
 		return 1
 	}

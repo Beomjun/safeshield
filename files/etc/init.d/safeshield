@@ -16,7 +16,7 @@ IPKG_INSTROOT="${IPKG_INSTROOT:-}"
 export IPKG_INSTROOT
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.3.12-r1'
+readonly PKG_VERSION='0.3.12-r2'
 
 if type extra_command >/dev/null 2>&1; then
 	extra_command 'apply_local_rules' 'Apply local allow/block rules using the cached Hub artifact'
@@ -71,7 +71,7 @@ start_service() {
 
 	ss_require_supported_dnsmasq || {
 		ss_status_set stage "dnsmasq_version_check"
-		ss_status_mark_failure "${ss_dnsmasq_check_error:-dnsmasq_version_check_failed}"
+		ss_status_mark_failure "$(ss_dnsmasq_check_error)"
 		return 1
 	}
 

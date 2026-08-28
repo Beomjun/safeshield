@@ -1,3 +1,9 @@
+## [0.3.12-r2] - 2026-08-28
+
+- Fix ShellCheck warnings in the dnsmasq compatibility helper and regression test scripts.
+- Encapsulate the dnsmasq compatibility failure code behind a helper instead of exposing a cross-file global variable.
+- Use an explicit empty `CDPATH` assignment in test path resolution and remove an unused test variable.
+
 ## [0.3.12-r1] - 2026-08-28
 
 - Require dnsmasq 2.80 or later before SafeShield starts, refreshes, or reapplies local rules.

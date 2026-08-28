@@ -1,7 +1,11 @@
 # shellcheck shell=ash
 
 readonly SS_MIN_DNSMASQ_VERSION='2.80'
-ss_dnsmasq_check_error=''
+_ss_dnsmasq_check_error=''
+
+ss_dnsmasq_check_error() {
+	printf '%s\n' "${_ss_dnsmasq_check_error}"
+}
 
 ss_dnsmasq_version() {
 	dnsmasq --version 2>/dev/null | awk '
@@ -17,11 +21,11 @@ ss_dnsmasq_version() {
 ss_require_supported_dnsmasq() {
 	local current_version
 
-	ss_dnsmasq_check_error=''
+	_ss_dnsmasq_check_error=''
 	ss_status_set dnsmasq_min_version "${SS_MIN_DNSMASQ_VERSION}"
 
 	if ! check_dnsmasq_binary; then
-		ss_dnsmasq_check_error='dnsmasq_binary_not_found'
+		_ss_dnsmasq_check_error='dnsmasq_binary_not_found'
 		ss_status_set dnsmasq_version ''
 		ss_status_set health_dnsmasq_binary '0'
 		ss_status_set health_dnsmasq_version '0'
@@ -34,14 +38,14 @@ ss_require_supported_dnsmasq() {
 	ss_status_set dnsmasq_version "${current_version}"
 
 	if [ -z "${current_version}" ]; then
-		ss_dnsmasq_check_error='dnsmasq_version_unknown'
+		_ss_dnsmasq_check_error='dnsmasq_version_unknown'
 		ss_status_set health_dnsmasq_version '0'
 		log_error 'Unable to determine dnsmasq version'
 		return 1
 	fi
 
 	if ! is_greater_equal "${current_version}" "${SS_MIN_DNSMASQ_VERSION}"; then
-		ss_dnsmasq_check_error='dnsmasq_version_unsupported'
+		_ss_dnsmasq_check_error='dnsmasq_version_unsupported'
 		ss_status_set health_dnsmasq_version '0'
 		log_error "Unsupported dnsmasq version ${current_version}; SafeShield requires ${SS_MIN_DNSMASQ_VERSION} or later"
 		return 1
