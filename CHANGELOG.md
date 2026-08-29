@@ -1,3 +1,11 @@
+## [0.3.14-r7] - 2026-08-29
+
+### Fixed
+
+- Initialize all per-device AWK array elements when a device record is created.
+- Avoid sparse associative-array values reaching serialization helpers, preventing gawk double-free crashes on affected versions.
+- Add regression coverage for complete state serialization of unidentified IP-based devices.
+
 ## [0.3.14-r6] - 2026-08-29
 
 ### Changed

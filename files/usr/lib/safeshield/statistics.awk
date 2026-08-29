@@ -69,7 +69,15 @@ function register_device(key, mac, ip, hostname,    selected) {
 	}
 
 	if (!(selected in device_seen)) {
+		# Initialize every per-device array element together. Besides keeping the
+		# device record structurally complete, this avoids passing a missing awk
+		# associative-array element to helper functions during serialization.
 		device_seen[selected] = 1
+		device_mac[selected] = ""
+		device_ip[selected] = ""
+		device_hostname[selected] = ""
+		device_queries[selected] = 0
+		device_blocked[selected] = 0
 		device_count++
 	}
 

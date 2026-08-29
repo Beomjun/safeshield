@@ -67,6 +67,8 @@ grep -F '"id":"aa:bb:cc:dd:ee:ff","mac":"aa:bb:cc:dd:ee:ff","ip":"192.168.1.20",
 grep -F '"id":"ip:192.168.1.10","mac":"","ip":"192.168.1.10","hostname":"","identified":false,"queries":1,"blocked":0' "$JSON" >/dev/null
 expected_device_line="$(printf 'device\taa:bb:cc:dd:ee:ff\taa:bb:cc:dd:ee:ff\t192.168.1.20\tiphone\t2\t2')"
 grep -F "$expected_device_line" "$STATE" >/dev/null
+expected_unidentified_line="$(printf 'device\tip:192.168.1.10\t*\t192.168.1.10\t*\t1\t0')"
+grep -F "$expected_unidentified_line" "$STATE" >/dev/null
 
 cat >"$FIXTURE" <<'LOGS'
 Sat Aug 29 07:00:00 2026 daemon.info dnsmasq[1]: 14 192.168.1.30/50004 query[A] openwrt.org from 192.168.1.30
