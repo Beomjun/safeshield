@@ -1,3 +1,11 @@
+## [0.3.14-r2] - 2026-08-29
+
+- Fix orphaned `logread` / `awk` statistics collector processes after procd restarts or service termination.
+- Track collector child PIDs explicitly and terminate them on HUP, INT, TERM, and normal exit.
+- Use a per-instance FIFO instead of an unmanaged shell pipeline so the parent process owns the full collector lifecycle.
+- Add a tmpfs collector lock to prevent concurrent statistics writers and recover stale locks after crashes.
+- Add regression coverage that verifies collector children and runtime files are cleaned up after termination.
+
 ## [0.3.14-r1] - 2026-08-29
 
 - Add lightweight local DNS statistics collection using dnsmasq query logs.
