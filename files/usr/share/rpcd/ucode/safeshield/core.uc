@@ -14,6 +14,9 @@ const CONFIG_SCHEMA_NAME = 'safeshield.config';
 const CONFIG_SCHEMA_VERSION = 1;
 const RULES_SCHEMA_NAME = 'safeshield.rules';
 const RULES_SCHEMA_VERSION = 1;
+const STATISTICS_SCHEMA_NAME = 'safeshield.statistics';
+const STATISTICS_SCHEMA_VERSION = 1;
+const STATISTICS_FILE = '/tmp/safeshield/statistics/statistics.json';
 const SERVICE_INIT = '/etc/init.d/safeshield';
 const RULES_DIR = '/etc/safeshield';
 
@@ -25,6 +28,9 @@ const CONFIG_SPEC = {
     compress_blocklist: { kind: 'bool', def: false },
     initial_dnsmasq_restart: { kind: 'bool', def: false },
     dnsmasq_sanity_check: { kind: 'bool', def: true },
+    statistics_enabled: { kind: 'bool', def: true },
+    statistics_snapshot_interval_s: { kind: 'int', def: 60, min: 10, max: 3600 },
+    statistics_retention_hours: { kind: 'int', def: 168, min: 1, max: 168 },
     download_timeout: { kind: 'int', def: 10, min: 1, max: 86400 },
     download_retry: { kind: 'int', def: 3, min: 1, max: 100 },
     pause_timeout: { kind: 'int', def: 20, min: 1, max: 86400 },
@@ -220,6 +226,9 @@ return {
     CONFIG_SCHEMA_VERSION: CONFIG_SCHEMA_VERSION,
     RULES_SCHEMA_NAME: RULES_SCHEMA_NAME,
     RULES_SCHEMA_VERSION: RULES_SCHEMA_VERSION,
+    STATISTICS_SCHEMA_NAME: STATISTICS_SCHEMA_NAME,
+    STATISTICS_SCHEMA_VERSION: STATISTICS_SCHEMA_VERSION,
+    STATISTICS_FILE: STATISTICS_FILE,
     SERVICE_INIT: SERVICE_INIT,
     RULES_DIR: RULES_DIR,
     CONFIG_SPEC: CONFIG_SPEC,

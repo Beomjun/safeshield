@@ -6,7 +6,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
-PKG_VERSION:=0.3.13
+PKG_VERSION:=0.3.14
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
@@ -64,6 +64,7 @@ define Package/safeshield/install
 
 	$(INSTALL_DIR) $(1)/usr/libexec
 	$(INSTALL_BIN) ./files/usr/libexec/safeshield-refreshd $(1)/usr/libexec/safeshield-refreshd
+	$(INSTALL_BIN) ./files/usr/libexec/safeshield-statsd $(1)/usr/libexec/safeshield-statsd
 
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/safeshield $(1)/etc/config/safeshield
@@ -80,6 +81,8 @@ define Package/safeshield/install
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/dns.sh $(1)/usr/lib/safeshield/dns.sh
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/blocklist.sh $(1)/usr/lib/safeshield/blocklist.sh
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/status-store.uc $(1)/usr/lib/safeshield/status-store.uc
+	$(INSTALL_DATA) ./files/usr/lib/safeshield/statistics.sh $(1)/usr/lib/safeshield/statistics.sh
+	$(INSTALL_DATA) ./files/usr/lib/safeshield/statistics.awk $(1)/usr/lib/safeshield/statistics.awk
 	echo '$(PKG_VERSION)-$(PKG_RELEASE)' > $(1)/usr/lib/safeshield/version
 
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/ucode

@@ -9,6 +9,7 @@ let config = require('config');
 let refresh = require('refresh');
 let rules = require('rules');
 let license = require('license');
+let statistics = require('statistics');
 
 return {
     safeshield: {
@@ -18,6 +19,10 @@ return {
 
         config: {
             call: config.build
+        },
+
+        statistics: {
+            call: statistics.build
         },
 
         config_update: {

@@ -20,6 +20,9 @@ ss_download_retry="3"
 ss_pause_timeout="20"
 ss_boot_start_delay_s="30"
 ss_dnsmasq_sanity_check="1"
+ss_statistics_enabled="1"
+ss_statistics_snapshot_interval_s="60"
+ss_statistics_retention_hours="168"
 ss_debug="0"
 
 ss_valid_line_count="0"
@@ -77,11 +80,25 @@ ss_validate_config() {
 	ss_validate_int ss_min_valid_line_count 3000 invalid_min_valid_line_count
 	ss_validate_int ss_pause_timeout 20 invalid_pause_timeout
 	ss_validate_int ss_boot_start_delay_s 30 invalid_boot_start_delay_s
+	ss_validate_int ss_statistics_snapshot_interval_s 60 invalid_statistics_snapshot_interval_s
+	ss_validate_int ss_statistics_retention_hours 168 invalid_statistics_retention_hours
 
 	ss_validate_bool ss_compress_blocklist 0 invalid_compress_blocklist
 	ss_validate_bool ss_initial_dnsmasq_restart 0 invalid_initial_dnsmasq_restart
 	ss_validate_bool ss_dnsmasq_sanity_check 1 invalid_dnsmasq_sanity_check
 	ss_validate_bool ss_apply_local_overrides 1 invalid_apply_local_overrides
+	ss_validate_bool ss_statistics_enabled 1 invalid_statistics_enabled
+
+	if [ "$ss_statistics_snapshot_interval_s" -lt 10 ] 2>/dev/null || [ "$ss_statistics_snapshot_interval_s" -gt 3600 ] 2>/dev/null; then
+		log_warn "statistics_snapshot_interval_s must be between 10 and 3600 seconds, using 60"
+		ss_status_add_warning "invalid_statistics_snapshot_interval_s"
+		ss_statistics_snapshot_interval_s=60
+	fi
+	if [ "$ss_statistics_retention_hours" -lt 1 ] 2>/dev/null || [ "$ss_statistics_retention_hours" -gt 168 ] 2>/dev/null; then
+		log_warn "statistics_retention_hours must be between 1 and 168, using 168"
+		ss_status_add_warning "invalid_statistics_retention_hours"
+		ss_statistics_retention_hours=168
+	fi
 }
 
 ss_load_config() {
@@ -104,6 +121,9 @@ ss_load_config() {
 	ss_pause_timeout="$(ss_config_get config pause_timeout 20)"
 	ss_boot_start_delay_s="$(ss_config_get config boot_start_delay_s 30)"
 	ss_dnsmasq_sanity_check="$(ss_config_get config dnsmasq_sanity_check 1)"
+	ss_statistics_enabled="$(ss_config_get config statistics_enabled 1)"
+	ss_statistics_snapshot_interval_s="$(ss_config_get config statistics_snapshot_interval_s 60)"
+	ss_statistics_retention_hours="$(ss_config_get config statistics_retention_hours 168)"
 	ss_debug="$(ss_config_get config debug 0)"
 
 	ss_validate_config

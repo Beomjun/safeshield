@@ -6,6 +6,7 @@
         "safeshield": [
           "status",
           "config",
+          "statistics",
           "rules_list"
         ]
       }

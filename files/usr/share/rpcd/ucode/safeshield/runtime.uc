@@ -26,6 +26,15 @@ function service_running(name) {
     return false;
 }
 
+function service_instance_running(name, instance_name) {
+    let r = ubus.call('service', 'list', { name: name });
+    if (!r || !r[name] || !r[name].instances || !r[name].instances[instance_name]) {
+        return false;
+    }
+
+    return !!r[name].instances[instance_name].running;
+}
+
 function dnsmasq_running() {
     let r = ubus.call('service', 'list', { name: 'dnsmasq' });
     if (!r || !r.dnsmasq || !r.dnsmasq.instances) {
@@ -137,6 +146,7 @@ function start_local_apply_async() {
 
 return {
     service_running: service_running,
+    service_instance_running: service_instance_running,
     dnsmasq_running: dnsmasq_running,
     run_service_action: run_service_action,
     refresh_running: refresh_running,

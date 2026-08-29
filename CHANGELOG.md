@@ -1,3 +1,11 @@
+## [0.3.14-r1] - 2026-08-29
+
+- Add lightweight local DNS statistics collection using dnsmasq query logs.
+- Keep statistics in tmpfs only to avoid persistent flash writes.
+- Add hourly query/block counters with configurable snapshots and up to 168 hours of retention.
+- Add the `safeshield.statistics` ubus RPC endpoint for local dashboards.
+- Enable asynchronous dnsmasq query logging only while statistics collection is enabled.
+
 ## [0.3.13-r1] - 2026-08-28
 
 - Bump version for release.

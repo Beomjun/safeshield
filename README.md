@@ -243,7 +243,8 @@ SafeShield keeps the rpcd registration entrypoint intentionally small and loads 
 ├── config.uc
 ├── refresh.uc
 ├── rules.uc
-└── license.uc
+├── license.uc
+└── statistics.uc
 ```
 
 The entrypoint prepends `/usr/share/rpcd/ucode/safeshield/*.uc` to ucode's `REQUIRE_SEARCH_PATH`, so the private RPC modules stay colocated with the rpcd plugin instead of using the global `/usr/share/ucode` tree.
@@ -261,6 +262,7 @@ Available methods:
 ```text
 safeshield.status
 safeshield.config
+safeshield.statistics
 safeshield.config_update
 safeshield.set_enabled
 safeshield.refresh
@@ -277,6 +279,40 @@ Read the current public configuration:
 ubus call safeshield config
 ```
 
+Read lightweight local DNS statistics:
+
+```sh
+ubus call safeshield statistics
+/etc/init.d/safeshield statistics
+```
+
+Statistics are collected from live dnsmasq query logging and only aggregate
+query/block counters are stored. Raw domains and client addresses are not
+written to the statistics state. Data lives under
+`/tmp/safeshield/statistics/`, is retained for up to 168 hourly buckets, and
+is intentionally reset on reboot to avoid flash writes. The collector starts
+`logread` in follow-only mode, so existing system log entries are not counted
+a second time when the service restarts.
+
+The default statistics settings are:
+
+```text
+statistics_enabled=1
+statistics_snapshot_interval_s=60
+statistics_retention_hours=168
+```
+
+When statistics are enabled, SafeShield adds `log-queries` and
+`log-async=25` to its managed dnsmasq configuration. Disabling statistics
+removes those settings and stops the collector. dnsmasq query messages still
+pass through the normal in-memory OpenWrt system log while collection is
+enabled; SafeShield itself persists only aggregate counters under `/tmp`.
+
+The blocked counter tracks dnsmasq null-address (`0.0.0.0` / `::`) responses.
+On SmartSafeHub images these responses are expected to come from SafeShield.
+If another package installs additional null-address dnsmasq rules, those hits
+are included in the aggregate blocked count as well.
+
 Update writable configuration values. `enabled` and `license_key` are
 intentionally excluded and have dedicated methods:
 
@@ -286,7 +322,10 @@ ubus call safeshield config_update '{
     "refresh_interval_s": 28800,
     "refresh_on_boot": true,
     "require_wan": true,
-    "apply_local_overrides": true
+    "apply_local_overrides": true,
+    "statistics_enabled": true,
+    "statistics_snapshot_interval_s": 60,
+    "statistics_retention_hours": 168
   }
 }'
 ```

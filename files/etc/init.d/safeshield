@@ -16,7 +16,7 @@ IPKG_INSTROOT="${IPKG_INSTROOT:-}"
 export IPKG_INSTROOT
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.3.13-r1'
+readonly PKG_VERSION='0.3.14-r1'
 
 if type extra_command >/dev/null 2>&1; then
 	extra_command 'apply_local_rules' 'Apply local allow/block rules using the cached Hub artifact'
@@ -26,6 +26,7 @@ if type extra_command >/dev/null 2>&1; then
 	extra_command 'resume' 'Resume the service'
 	extra_command 'show_blocklist' 'List currently blocked domains'
 	extra_command 'sizes' 'Display SafeShield blocklist size information'
+	extra_command 'statistics' 'Display local SafeShield DNS statistics'
 	extra_command 'version' 'Show version information'
 fi
 
@@ -41,6 +42,9 @@ boot() {
 }
 
 start_service() {
+	local statistics_dnsmasq_changed=0
+	local blocklist_restart_expected=0
+
 	ss_load_config || {
 		log_error "Failed to load config"
 		return 1
@@ -58,10 +62,24 @@ start_service() {
 
 	if [ "${ss_enabled}" != "1" ]; then
 		log_warn "${PKG_NAME} is disabled"
+		statistics_dnsmasq_changed="$(ss_statistics_configure_dnsmasq 0)" || {
+			log_error "Failed to disable dnsmasq statistics logging"
+			return 1
+		}
+		[ -f "${SS_BLOCKLIST_FILE}" ] && blocklist_restart_expected=1
+
 		ss_runtime_deactivate_blocklist || {
 			log_error "Failed to deactivate SafeShield blocklist"
 			return 1
 		}
+
+		if [ "$statistics_dnsmasq_changed" = "1" ] && [ "$blocklist_restart_expected" = "0" ]; then
+			dnsmasq_restart || {
+				log_error "Failed to restart dnsmasq after disabling statistics logging"
+				return 1
+			}
+		fi
+
 		ss_status_set status "disabled"
 		ss_status_set stage "disabled"
 		ss_status_set last_result "disabled"
@@ -75,10 +93,37 @@ start_service() {
 		return 1
 	}
 
+	if [ "${ss_statistics_enabled}" = "1" ]; then
+		ss_ensure_dnsmasq_confdir || {
+			log_error "dnsmasq confdir is unavailable while enabling statistics"
+			return 1
+		}
+		statistics_dnsmasq_changed="$(ss_statistics_configure_dnsmasq 1)" || {
+			log_error "Failed to enable dnsmasq statistics logging"
+			return 1
+		}
+	else
+		statistics_dnsmasq_changed="$(ss_statistics_configure_dnsmasq 0)" || {
+			log_error "Failed to disable dnsmasq statistics logging"
+			return 1
+		}
+	fi
+
+	if [ -f "${SS_BLOCKLIST_FILE}" ] || [ -f "${SS_INACTIVE_BLOCKLIST_FILE}" ]; then
+		blocklist_restart_expected=1
+	fi
+
 	ss_runtime_activate_blocklist || {
 		log_error "Failed to activate SafeShield blocklist"
 		return 1
 	}
+
+	if [ "$statistics_dnsmasq_changed" = "1" ] && [ "$blocklist_restart_expected" = "0" ]; then
+		dnsmasq_restart || {
+			log_error "Failed to restart dnsmasq after updating statistics logging"
+			return 1
+		}
+	fi
 
 	procd_open_instance
 	procd_set_param command /usr/libexec/safeshield-refreshd
@@ -88,15 +133,42 @@ start_service() {
 	procd_set_param file /etc/config/safeshield
 	procd_set_param data service safeshield
 	procd_close_instance
+
+	if [ "${ss_statistics_enabled}" = "1" ]; then
+		procd_open_instance statistics
+		procd_set_param command /usr/libexec/safeshield-statsd
+		procd_set_param respawn 3600 5 5
+		procd_set_param stdout 1
+		procd_set_param stderr 1
+		procd_set_param file /etc/config/safeshield
+		procd_set_param data service safeshield-statistics
+		procd_close_instance
+	fi
 }
 
 stop_service() {
+	local statistics_dnsmasq_changed=0
+	local blocklist_restart_expected=0
+
 	ss_load_config >/dev/null 2>&1 || true
+
+	statistics_dnsmasq_changed="$(ss_statistics_configure_dnsmasq 0)" || {
+		log_error "Failed to disable dnsmasq statistics logging while stopping service"
+		return 1
+	}
+	[ -f "${SS_BLOCKLIST_FILE}" ] && blocklist_restart_expected=1
 
 	ss_runtime_deactivate_blocklist || {
 		log_error "Failed to deactivate SafeShield blocklist while stopping service"
 		return 1
 	}
+
+	if [ "$statistics_dnsmasq_changed" = "1" ] && [ "$blocklist_restart_expected" = "0" ]; then
+		dnsmasq_restart || {
+			log_error "Failed to restart dnsmasq after disabling statistics logging"
+			return 1
+		}
+	fi
 
 	ss_status_set next_refresh_at "0"
 	if [ "${ss_enabled:-0}" = "1" ]; then
@@ -133,6 +205,7 @@ status_service() {
 	local enabled refresh_interval_s refresh_on_boot require_wan boot_delay
 	local license_key artifact_tier artifact_version license_plan device_profile
 	local dnsmasq_version dnsmasq_min_version
+	local statistics_enabled statistics_snapshot_interval_s statistics_retention_hours
 
 	if ! ss_load_config >/dev/null 2>&1; then
 		printf '%s\n' 'config: load failed'
@@ -144,6 +217,9 @@ status_service() {
 	require_wan="$(ss_config_get config require_wan 1)"
 	boot_delay="$(ss_config_get config boot_start_delay_s 30)"
 	license_key="$(ss_config_get config license_key '')"
+	statistics_enabled="$(ss_config_get config statistics_enabled 1)"
+	statistics_snapshot_interval_s="$(ss_config_get config statistics_snapshot_interval_s 60)"
+	statistics_retention_hours="$(ss_config_get config statistics_retention_hours 168)"
 
 	status=""
 	stage=""
@@ -192,6 +268,14 @@ status_service() {
 	[ -n "$artifact_tier" ] && printf 'artifact_tier: %s\n' "$artifact_tier"
 	[ -n "$artifact_version" ] && printf 'artifact_version: %s\n' "$artifact_version"
 	printf 'valid_line_count: %s\n' "$valid_line_count"
+	printf 'statistics_enabled: %s\n' "$statistics_enabled"
+	printf 'statistics_snapshot_interval_s: %s\n' "$statistics_snapshot_interval_s"
+	printf 'statistics_retention_hours: %s\n' "$statistics_retention_hours"
+	if procd_running safeshield statistics; then
+		printf 'statistics_collector: running\n'
+	else
+		printf 'statistics_collector: stopped\n'
+	fi
 
 	if procd_running safeshield; then
 		printf '%s\n' 'refreshd: running'
@@ -282,6 +366,14 @@ sizes() {
 	printf 'blocklist_file_size_kb: %s\n' "$blocklist_file_size_kb"
 	printf 'backup_blocklist_file_size_kb: %s\n' "$backup_file_size_kb"
 	printf 'valid_line_count: %s\n' "$valid_line_count"
+}
+
+statistics() {
+	if [ -s "${SS_STATISTICS_JSON_FILE}" ]; then
+		cat "${SS_STATISTICS_JSON_FILE}"
+	else
+		printf '%s\n' '{"schema":{"name":"safeshield.statistics","version":1},"volatile":true,"totals":{"queries":0,"blocked":0},"hourly":[]}'
+	fi
 }
 
 version() {

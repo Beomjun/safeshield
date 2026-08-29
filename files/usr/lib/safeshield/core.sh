@@ -47,6 +47,13 @@ readonly SS_RUNTIME_OUT="${SS_TMP_DIR}/runtime.out"
 readonly SS_REFRESH_LOCK='/var/lock/safeshield-refresh.lock'
 readonly SS_REFRESH_LOCK_FD=307
 readonly SS_LOCAL_APPLY_STATE="${SS_TMP_DIR}/local-apply.state"
+readonly SS_STATISTICS_DIR="${SS_TMP_DIR}/statistics"
+readonly SS_STATISTICS_STATE_FILE="${SS_STATISTICS_DIR}/state.tsv"
+readonly SS_STATISTICS_JSON_FILE="${SS_STATISTICS_DIR}/statistics.json"
+readonly SS_STATISTICS_DNSMASQ_CONF="${SS_DNSMASQ_DIR}/safeshield.statistics.conf"
+
+# shellcheck disable=SC1091
+. "${IPKG_INSTROOT}/usr/lib/safeshield/statistics.sh"
 
 ss_should_terminate="${ss_should_terminate:-0}"
 

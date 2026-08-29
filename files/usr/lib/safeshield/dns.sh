@@ -56,7 +56,7 @@ ss_require_supported_dnsmasq() {
 }
 
 ss_mkdirs() {
-	mkdir -p "${SS_TMP_DIR}" "${SS_DNSMASQ_DIR}"
+	mkdir -p "${SS_TMP_DIR}" "${SS_DNSMASQ_DIR}" "${SS_STATISTICS_DIR}"
 }
 
 ss_clean_tmp() {

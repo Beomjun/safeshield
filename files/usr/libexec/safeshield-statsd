@@ -1,0 +1,41 @@
+#!/bin/sh
+# shellcheck shell=ash
+
+# Variables are populated by sourced SafeShield helpers and ss_load_config().
+# shellcheck disable=SC2154
+LC_ALL=C
+export LC_ALL
+
+# shellcheck disable=SC1091
+. /lib/functions.sh
+# shellcheck disable=SC1091
+. /usr/lib/safeshield/core.sh
+
+main() {
+	local snapshot_interval retention_hours
+
+	ss_load_config || return 1
+	[ "${ss_enabled}" = "1" ] || return 0
+	[ "${ss_statistics_enabled}" = "1" ] || return 0
+
+	command_exists logread || {
+		log_error 'logread is required for SafeShield statistics'
+		return 1
+	}
+
+	mkdir -p "${SS_STATISTICS_DIR}" || return 1
+
+	snapshot_interval="${ss_statistics_snapshot_interval_s}"
+	retention_hours="${ss_statistics_retention_hours}"
+
+	log_info "Starting statistics collector (snapshot=${snapshot_interval}s retention=${retention_hours}h)"
+
+	logread -f -l 0 | awk \
+		-v state_file="${SS_STATISTICS_STATE_FILE}" \
+		-v json_file="${SS_STATISTICS_JSON_FILE}" \
+		-v snapshot_interval="${snapshot_interval}" \
+		-v retention_hours="${retention_hours}" \
+		-f /usr/lib/safeshield/statistics.awk
+}
+
+main "$@"

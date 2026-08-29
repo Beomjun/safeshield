@@ -18,6 +18,11 @@ config safeshield 'config'
 	option initial_dnsmasq_restart '0'
 	option dnsmasq_sanity_check '1'
 
+	# Local statistics (RAM only; reset on reboot)
+	option statistics_enabled '1'
+	option statistics_snapshot_interval_s '60'
+	option statistics_retention_hours '168'
+
 	# Download / refresh runtime
 	option download_timeout '10'
 	option download_retry '3'
