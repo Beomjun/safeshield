@@ -50,10 +50,10 @@ AWK_PID_FILE="$TMP/awk.pid"
 export LOGREAD_PID_FILE AWK_PID_FILE
 
 PATH="$TMP/bin:$PATH" \
-SS_STATSD_FUNCTIONS_LIB="$TMP/functions.sh" \
-SS_STATSD_CORE_LIB="$TMP/core.sh" \
-SS_STATSD_AWK_PROGRAM="$ROOT/files/usr/lib/safeshield/statistics.awk" \
-sh "$ROOT/files/usr/libexec/safeshield-statsd" &
+	SS_STATSD_FUNCTIONS_LIB="$TMP/functions.sh" \
+	SS_STATSD_CORE_LIB="$TMP/core.sh" \
+	SS_STATSD_AWK_PROGRAM="$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	sh "$ROOT/files/usr/libexec/safeshield-statsd" &
 STATSD_PID=$!
 
 tries=0

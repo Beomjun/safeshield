@@ -1,3 +1,7 @@
+## [0.3.14-r3] - 2026-08-29
+
+- Fix `shfmt -ci` formatting for the statistics collector regression test environment assignments.
+
 ## [0.3.14-r2] - 2026-08-29
 
 - Fix orphaned `logread` / `awk` statistics collector processes after procd restarts or service termination.
