@@ -30,7 +30,6 @@ JSON="$TMP/statistics.json"
 FIXTURE="$TMP/dnsmasq.log"
 LEASES="$TMP/dhcp.leases"
 
-
 cat >"$LEASES" <<'LEASES'
 1788000000 aa:bb:cc:dd:ee:ff 192.168.1.20 iphone *
 1788000000 11:22:33:44:55:66 192.168.1.30 laptop *

@@ -1,3 +1,9 @@
+## [0.3.14-r5] - 2026-08-29
+
+### Fixed
+
+- Align statistics tests with the repository shfmt formatting rules.
+
 ## [0.3.14-r4] - 2026-08-29
 
 - Add per-device DNS query and block counters to local SafeShield statistics.
