@@ -36,6 +36,37 @@ function sanitize_hourly(items) {
     return result;
 }
 
+function sanitize_devices(items) {
+    let result = [];
+
+    if (type(items) != 'array') {
+        return result;
+    }
+
+    for (let item in items) {
+        if (type(item) != 'object') {
+            continue;
+        }
+
+        let id = sprintf('%s', item.id || '');
+        if (!id) {
+            continue;
+        }
+
+        push(result, {
+            id: id,
+            mac: sprintf('%s', item.mac || ''),
+            ip: sprintf('%s', item.ip || ''),
+            hostname: sprintf('%s', item.hostname || ''),
+            identified: to_bool(item.identified, false),
+            queries: to_int(item.queries, 0),
+            blocked: to_int(item.blocked, 0)
+        });
+    }
+
+    return result;
+}
+
 function build_statistics() {
     reload_uci();
 
@@ -63,7 +94,10 @@ function build_statistics() {
             queries: to_int(totals.queries, 0),
             blocked: to_int(totals.blocked, 0)
         },
-        hourly: sanitize_hourly(data.hourly)
+        hourly: sanitize_hourly(data.hourly),
+        device_limit: to_int(data.device_limit, 128),
+        devices_truncated: to_bool(data.devices_truncated, false),
+        devices: sanitize_devices(data.devices)
     };
 }
 

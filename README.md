@@ -286,13 +286,18 @@ ubus call safeshield statistics
 /etc/init.d/safeshield statistics
 ```
 
-Statistics are collected from live dnsmasq query logging and only aggregate
-query/block counters are stored. Raw domains and client addresses are not
-written to the statistics state. Data lives under
-`/tmp/safeshield/statistics/`, is retained for up to 168 hourly buckets, and
-is intentionally reset on reboot to avoid flash writes. The collector starts
-`logread` in follow-only mode, so existing system log entries are not counted
-a second time when the service restarts.
+Statistics are collected from live dnsmasq query logging. Raw queried domains
+are never written to the statistics state. In addition to global and hourly
+query/block counters, SafeShield keeps per-device query/block totals locally.
+DHCP clients are identified by MAC address using the dnsmasq lease file, with
+the current IP and hostname included for the local UI. Clients that cannot be
+matched to a DHCP lease use a temporary IP-based identity. Device statistics
+are capped at 128 identities to bound memory use on low-end routers.
+
+Data lives under `/tmp/safeshield/statistics/`, is retained for up to 168
+hourly buckets, and is intentionally reset on reboot to avoid flash writes.
+The collector starts `logread` in follow-only mode, so existing system log
+entries are not counted a second time when the service restarts.
 
 The default statistics settings are:
 
@@ -302,9 +307,10 @@ statistics_snapshot_interval_s=60
 statistics_retention_hours=168
 ```
 
-When statistics are enabled, SafeShield adds `log-queries` and
-`log-async=25` to its managed dnsmasq configuration. Disabling statistics
-removes those settings and stops the collector. dnsmasq query messages still
+When statistics are enabled, SafeShield adds `log-queries=extra` and
+`log-async=25` to its managed dnsmasq configuration. The `extra` mode provides
+the requestor address needed to attribute block responses to local devices.
+Disabling statistics removes those settings and stops the collector. dnsmasq query messages still
 pass through the normal in-memory OpenWrt system log while collection is
 enabled; SafeShield itself persists only aggregate counters under `/tmp`.
 

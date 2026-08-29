@@ -21,7 +21,7 @@ ss_statistics_configure_dnsmasq() {
 
 	cat >"$tmp" <<'CONFIG'
 # Managed by SafeShield. Do not edit.
-log-queries
+log-queries=extra
 log-async=25
 CONFIG
 

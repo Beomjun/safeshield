@@ -84,6 +84,7 @@ stats_acquire_lock() {
 stats_run_collector() {
 	local snapshot_interval="$1"
 	local retention_hours="$2"
+	local lease_file="$3"
 	local rc=0
 
 	stats_fifo="${SS_STATISTICS_DIR}/events.$$"
@@ -101,6 +102,9 @@ stats_run_collector() {
 		-v json_file="${SS_STATISTICS_JSON_FILE}" \
 		-v snapshot_interval="${snapshot_interval}" \
 		-v retention_hours="${retention_hours}" \
+		-v lease_file="${lease_file}" \
+		-v lease_refresh_interval=60 \
+		-v max_devices=128 \
 		-f "$SS_STATSD_AWK_PROGRAM" \
 		<"$stats_fifo" &
 	stats_awk_pid=$!
@@ -118,7 +122,7 @@ stats_run_collector() {
 }
 
 main() {
-	local snapshot_interval retention_hours rc=0
+	local snapshot_interval retention_hours lease_file configured_lease_file rc=0
 
 	ss_load_config || return 1
 	[ "${ss_enabled}" = "1" ] || return 0
@@ -143,10 +147,15 @@ main() {
 
 	snapshot_interval="${ss_statistics_snapshot_interval_s}"
 	retention_hours="${ss_statistics_retention_hours}"
+	lease_file="${SS_STATSD_DHCP_LEASE_FILE:-/tmp/dhcp.leases}"
+	if [ -z "${SS_STATSD_DHCP_LEASE_FILE:-}" ] && command_exists uci; then
+		configured_lease_file="$(uci -q get dhcp.@dnsmasq[0].leasefile 2>/dev/null || true)"
+		[ -n "$configured_lease_file" ] && lease_file="$configured_lease_file"
+	fi
 
 	log_info "Starting statistics collector (snapshot=${snapshot_interval}s retention=${retention_hours}h)"
 
-	stats_run_collector "$snapshot_interval" "$retention_hours" || rc=$?
+	stats_run_collector "$snapshot_interval" "$retention_hours" "$lease_file" || rc=$?
 	return "$rc"
 }
 

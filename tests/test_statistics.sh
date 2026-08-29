@@ -15,7 +15,7 @@ export SS_DNSMASQ_DIR SS_STATISTICS_DNSMASQ_CONF
 
 changed="$(ss_statistics_configure_dnsmasq 1)"
 [ "$changed" = "1" ]
-grep -Fx 'log-queries' "$SS_STATISTICS_DNSMASQ_CONF" >/dev/null
+grep -Fx 'log-queries=extra' "$SS_STATISTICS_DNSMASQ_CONF" >/dev/null
 grep -Fx 'log-async=25' "$SS_STATISTICS_DNSMASQ_CONF" >/dev/null
 
 changed="$(ss_statistics_configure_dnsmasq 1)"
@@ -28,6 +28,13 @@ changed="$(ss_statistics_configure_dnsmasq 0)"
 STATE="$TMP/state.tsv"
 JSON="$TMP/statistics.json"
 FIXTURE="$TMP/dnsmasq.log"
+LEASES="$TMP/dhcp.leases"
+
+
+cat >"$LEASES" <<'LEASES'
+1788000000 aa:bb:cc:dd:ee:ff 192.168.1.20 iphone *
+1788000000 11:22:33:44:55:66 192.168.1.30 laptop *
+LEASES
 
 cat >"$FIXTURE" <<'LOGS'
 Sat Aug 29 06:00:00 2026 daemon.info dnsmasq[1]: query[A] example.com from 192.168.1.10
@@ -45,6 +52,7 @@ awk \
 	-v json_file="$JSON" \
 	-v snapshot_interval=60 \
 	-v retention_hours=168 \
+	-v lease_file="$LEASES" \
 	-v fixed_now=1787950800 \
 	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
 	<"$FIXTURE"
@@ -56,10 +64,10 @@ if grep -F 'ads.example' "$STATE" "$JSON" >/dev/null; then
 	echo 'raw domains must not be persisted in statistics files' >&2
 	exit 1
 fi
-if grep -F '192.168.1.20' "$STATE" "$JSON" >/dev/null; then
-	echo 'client addresses must not be persisted in statistics files' >&2
-	exit 1
-fi
+grep -F '"id":"aa:bb:cc:dd:ee:ff","mac":"aa:bb:cc:dd:ee:ff","ip":"192.168.1.20","hostname":"iphone","identified":true,"queries":2,"blocked":2' "$JSON" >/dev/null
+grep -F '"id":"ip:192.168.1.10","mac":"","ip":"192.168.1.10","hostname":"","identified":false,"queries":1,"blocked":0' "$JSON" >/dev/null
+expected_device_line="$(printf 'device\taa:bb:cc:dd:ee:ff\taa:bb:cc:dd:ee:ff\t192.168.1.20\tiphone\t2\t2')"
+grep -F "$expected_device_line" "$STATE" >/dev/null
 
 cat >"$FIXTURE" <<'LOGS'
 Sat Aug 29 07:00:00 2026 daemon.info dnsmasq[1]: 14 192.168.1.30/50004 query[A] openwrt.org from 192.168.1.30
@@ -70,12 +78,54 @@ awk \
 	-v json_file="$JSON" \
 	-v snapshot_interval=60 \
 	-v retention_hours=168 \
+	-v lease_file="$LEASES" \
 	-v fixed_now=1787954400 \
 	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
 	<"$FIXTURE"
 
 grep -F '"totals":{"queries":4,"blocked":2}' "$JSON" >/dev/null
+grep -F '"id":"11:22:33:44:55:66","mac":"11:22:33:44:55:66","ip":"192.168.1.30","hostname":"laptop","identified":true,"queries":1,"blocked":0' "$JSON" >/dev/null
 bucket_count="$(grep -c '^bucket' "$STATE")"
 [ "$bucket_count" -eq 2 ]
+
+# A client first seen without a DHCP lease must migrate to its MAC identity
+# once the lease appears, without losing counters or creating a duplicate.
+MIGRATE_STATE="$TMP/migrate-state.tsv"
+MIGRATE_JSON="$TMP/migrate-statistics.json"
+MIGRATE_LEASES="$TMP/migrate-dhcp.leases"
+MIGRATE_LOG="$TMP/migrate.log"
+: >"$MIGRATE_LEASES"
+cat >"$MIGRATE_LOG" <<'LOGS'
+daemon.info dnsmasq[1]: 21 192.168.1.40/50001 query[A] first.example from 192.168.1.40
+LOGS
+awk \
+	-v state_file="$MIGRATE_STATE" \
+	-v json_file="$MIGRATE_JSON" \
+	-v lease_file="$MIGRATE_LEASES" \
+	-v snapshot_interval=60 \
+	-v retention_hours=168 \
+	-v fixed_now=1787958000 \
+	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	<"$MIGRATE_LOG"
+cat >"$MIGRATE_LEASES" <<'LEASES'
+1788000000 de:ad:be:ef:00:01 192.168.1.40 tablet *
+LEASES
+cat >"$MIGRATE_LOG" <<'LOGS'
+daemon.info dnsmasq[1]: 22 192.168.1.40/50002 query[A] second.example from 192.168.1.40
+LOGS
+awk \
+	-v state_file="$MIGRATE_STATE" \
+	-v json_file="$MIGRATE_JSON" \
+	-v lease_file="$MIGRATE_LEASES" \
+	-v snapshot_interval=60 \
+	-v retention_hours=168 \
+	-v fixed_now=1787958061 \
+	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	<"$MIGRATE_LOG"
+grep -F '"id":"de:ad:be:ef:00:01","mac":"de:ad:be:ef:00:01","ip":"192.168.1.40","hostname":"tablet","identified":true,"queries":2,"blocked":0' "$MIGRATE_JSON" >/dev/null
+if grep -F '"id":"ip:192.168.1.40"' "$MIGRATE_JSON" >/dev/null; then
+	echo 'temporary IP identity must migrate to DHCP MAC identity' >&2
+	exit 1
+fi
 
 printf '%s\n' 'statistics tests: ok'

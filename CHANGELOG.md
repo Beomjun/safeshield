@@ -1,3 +1,11 @@
+## [0.3.14-r4] - 2026-08-29
+
+- Add per-device DNS query and block counters to local SafeShield statistics.
+- Use `log-queries=extra` so dnsmasq block responses can be attributed to the requesting client.
+- Resolve DHCP clients from the configured dnsmasq lease file and use MAC addresses as stable local device identities.
+- Fall back to temporary IP identities for clients without a DHCP lease and migrate them when a lease becomes available.
+- Cap retained device identities at 128 while keeping raw queried domains out of statistics state.
+
 ## [0.3.14-r3] - 2026-08-29
 
 - Fix `shfmt -ci` formatting for the statistics collector regression test environment assignments.
