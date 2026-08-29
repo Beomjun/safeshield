@@ -230,6 +230,28 @@ ubus call safeshield status
 logread | grep -i safeshield
 ```
 
+## Development linting
+
+SafeShield uses the same shell lint entrypoint locally and in GitHub Actions:
+
+```sh
+sh scripts/lint.sh
+```
+
+The lint script runs `shfmt -d -ci`, ShellCheck, and `sh -n` against tracked shell files. Install `shfmt` and `shellcheck` on the development machine before running it.
+
+To enable the repository pre-commit hook, install `pre-commit` and register the hook once:
+
+```sh
+pre-commit install
+```
+
+After that, `git commit` runs the shell lint automatically. You can also check the whole repository manually:
+
+```sh
+pre-commit run --all-files
+```
+
 ## Internal rpcd ucode layout
 
 SafeShield keeps the rpcd registration entrypoint intentionally small and loads feature modules from `/usr/share/rpcd/ucode/safeshield/`:

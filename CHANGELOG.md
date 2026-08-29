@@ -1,3 +1,11 @@
+## [0.3.14-r6] - 2026-08-29
+
+### Changed
+
+- Add a shared shell lint entrypoint for shfmt, ShellCheck, and shell syntax validation.
+- Run the same shell lint script from local pre-commit hooks and GitHub Actions.
+- Fail local commits early when shell formatting does not satisfy `shfmt -d -ci`.
+
 ## [0.3.14-r5] - 2026-08-29
 
 ### Fixed

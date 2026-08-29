@@ -21,55 +21,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck shfmt
 
-      - name: Collect shell files
-        id: files
+      - name: Run shell lint
         shell: bash
-        run: |
-          set -eu
-
-          tmpfile="$(mktemp)"
-
-          git ls-files | while IFS= read -r f; do
-            [ -f "$f" ] || continue
-
-            case "$f" in
-              *.sh|*/init.d/*|*/uci-defaults/*|*/hotplug.d/*)
-                printf '%s\n' "$f" >> "$tmpfile"
-                continue
-                ;;
-            esac
-
-            if head -n 1 "$f" 2>/dev/null | grep -Eq '^#!.*\b(sh|ash|bash)\b'; then
-              printf '%s\n' "$f" >> "$tmpfile"
-            fi
-          done
-
-          sort -u "$tmpfile" > shell-files.txt
-          rm -f "$tmpfile"
-
-          if [ -s shell-files.txt ]; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-            echo "Shell files:"
-            cat shell-files.txt
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "No shell files found."
-          fi
-
-      - name: Run shfmt
-        if: steps.files.outputs.found == 'true'
-        shell: bash
-        run: |
-          set -eu
-          xargs -r shfmt -d -ci < shell-files.txt
-
-      - name: Run ShellCheck
-        if: steps.files.outputs.found == 'true'
-        shell: bash
-        run: |
-          set -eu
-          xargs -r shellcheck -x -S warning < shell-files.txt
+        run: sh scripts/lint.sh
 
       - name: Run tests
         shell: bash
-        run: sh ./tests/run.sh
+        run: sh tests/run.sh
