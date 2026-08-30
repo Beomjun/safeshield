@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.16-r3] - 2026-08-30
+
+### Added
+
+- Add host-side ucode unit tests for core helpers and rpcd config, license, refresh, rules, statistics, and status behavior.
+- Compile-check all production rpcd ucode modules before running ucode unit tests.
+- Run ucode tests in GitHub Actions using the ucode revision shipped by the OpenWrt 25.12 package feed.
+
 ## [0.3.16-r2] - 2026-08-30
 
 ### Added
