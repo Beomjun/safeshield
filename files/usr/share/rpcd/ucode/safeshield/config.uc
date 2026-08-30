@@ -157,6 +157,42 @@ function config_update_call(request) {
 
     reload_uci();
 
+    let statistics_only =
+        length(changed_names) == 1 &&
+        changed_names[0] == 'statistics_enabled';
+
+    if (statistics_only) {
+        let reconciled = run_service_action('reconcile_statistics', 60000);
+        if (!reconciled.ok) {
+            return {
+                ok: false,
+                committed: true,
+                changed: changed_names,
+                restarted: false,
+                reconciled: false,
+                service_rc: reconciled.rc,
+                error: {
+                    code: 'statistics_reconcile_failed',
+                    message: 'Configuration was committed but SafeShield statistics runtime reconciliation failed'
+                },
+                config: build_config()
+            };
+        }
+
+        return {
+            ok: true,
+            changed: changed_names,
+            restarted: false,
+            reconciled: true,
+            refresh: {
+                requested: false,
+                accepted: false,
+                reason: 'not_required'
+            },
+            config: build_config()
+        };
+    }
+
     let restarted = run_service_action('restart', 60000);
     if (!restarted.ok) {
         return {

@@ -1,3 +1,12 @@
+## [0.3.14-r8] - 2026-08-30
+
+### Fixed
+
+- Reconcile statistics enable/disable changes without restarting the SafeShield refresh daemon.
+- Add or remove only the statistics procd instance while keeping the refresh scheduler running.
+- Restart dnsmasq only when the managed statistics logging configuration changes.
+- Avoid transient `stage: stopped` states caused by full SafeShield restarts from statistics-only configuration updates.
+
 ## [0.3.14-r7] - 2026-08-29
 
 ### Fixed
