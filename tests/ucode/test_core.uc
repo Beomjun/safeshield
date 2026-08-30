@@ -4,6 +4,8 @@ let core = require('core');
 
 assert(core.trim('  example.com\n') == 'example.com', 'trim removes surrounding whitespace');
 assert(core.trim('\t value \r\n') == 'value', 'trim removes tabs and line breaks');
+assert(core.trim('value   ') == 'value', 'trim removes trailing whitespace');
+assert(core.trim('   value') == 'value', 'trim removes leading whitespace');
 
 assert(core.to_bool('1', false) == true, 'to_bool accepts 1');
 assert(core.to_bool('yes', false) == true, 'to_bool accepts yes');

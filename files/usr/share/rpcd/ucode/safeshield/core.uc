@@ -42,7 +42,7 @@ const CONFIG_SPEC = {
 };
 
 function trim(s) {
-    return replace(s, /^[\r\n\t ]+|[\r\n\t ]+$/, '');
+    return replace(s, /^[\r\n\t ]+|[\r\n\t ]+$/g, '');
 }
 
 function pkg_version() {

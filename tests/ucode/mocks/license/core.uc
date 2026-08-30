@@ -7,7 +7,7 @@ let state = {
 };
 
 function trim(s) {
-    return replace(s, /^[\r\n\t ]+|[\r\n\t ]+$/, '');
+    return replace(s, /^[\r\n\t ]+|[\r\n\t ]+$/g, '');
 }
 
 function mask_secret(v) {

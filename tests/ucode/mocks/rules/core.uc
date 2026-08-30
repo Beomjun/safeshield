@@ -1,7 +1,7 @@
 'use strict';
 
 function trim(s) {
-    return replace(s, /^[\r\n\t ]+|[\r\n\t ]+$/, '');
+    return replace(s, /^[\r\n\t ]+|[\r\n\t ]+$/g, '');
 }
 
 function to_bool(v, def) {

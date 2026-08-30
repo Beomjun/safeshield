@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.16-r4] - 2026-08-30
+
+### Fixed
+
+- Fix the shared ucode `trim()` helper so leading and trailing whitespace are both removed in a single call.
+- Keep ucode unit-test mocks aligned with the production trimming behavior and add explicit leading/trailing regression cases.
+
 ## [0.3.16-r3] - 2026-08-30
 
 ### Added

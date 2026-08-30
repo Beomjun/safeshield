@@ -74,7 +74,7 @@ function mask_secret(v) {
 
 return {
     PKG_NAME: 'safeshield',
-    PKG_VERSION: '0.3.16-r3',
+    PKG_VERSION: '0.3.16-r4',
     STATUS_FILE: '/tmp/status.json',
     BLOCKLIST_FILE: '/tmp/blocklist',
     LOCAL_ALLOWLIST_FILE: '/etc/safeshield/allowlist',
