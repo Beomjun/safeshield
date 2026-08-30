@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.16-r2] - 2026-08-30
+
+### Added
+
+- Add host-side regression tests for shared utility helpers, configuration validation, identity persistence/profile mapping, status state transitions, and the rpcd/ACL public contract.
+
+### Changed
+
+- Run the new regression tests from the existing `tests/run.sh` entrypoint.
+
 ## [0.3.16-r1] - 2026-08-30
 
 ### Added

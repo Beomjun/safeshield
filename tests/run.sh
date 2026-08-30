@@ -4,7 +4,12 @@ set -eu
 
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 
+sh "$ROOT/tests/test_utils.sh"
+sh "$ROOT/tests/test_config_validation.sh"
 sh "$ROOT/tests/test_dnsmasq_version.sh"
+sh "$ROOT/tests/test_status_state.sh"
+sh "$ROOT/tests/test_identity.sh"
+sh "$ROOT/tests/test_rpcd_contract.sh"
 sh "$ROOT/tests/test_status_version.sh"
 sh "$ROOT/tests/test_blocklist_format.sh"
 sh "$ROOT/tests/test_multi_artifact.sh"
