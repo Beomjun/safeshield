@@ -279,6 +279,101 @@ ss_http_get_file() {
 	uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}"
 }
 
+ss_artifact_source_action() {
+	local action
+
+	action="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+	case "$action" in
+		block | allow)
+			printf '%s' "$action"
+			return 0
+			;;
+	esac
+
+	return 1
+}
+
+ss_artifact_source_id() {
+	local id="$1"
+	local fallback="$2"
+
+	id="$(printf '%s' "$id" | tr -c 'A-Za-z0-9._-' '_')"
+	[ -n "$id" ] || id="$fallback"
+	printf '%s' "$id"
+}
+
+ss_resolve_artifact_sources() {
+	local response="$1"
+	local index=0
+	local max_sources="${SS_MAX_ARTIFACT_SOURCES:-16}"
+	local source_count=0
+	local block_count=0
+	local allow_count=0
+	local source_id action url sha256
+	local legacy_url legacy_sha256
+
+	: >"${SS_RESOLVED_SOURCES}" || return 1
+
+	while [ "$index" -lt "$max_sources" ]; do
+		url="$(ss_json_get_file "$response" "@.artifact.sources[${index}].download_url")"
+		[ -n "$url" ] || break
+
+		action="$(ss_json_get_file "$response" "@.artifact.sources[${index}].action")"
+		[ -n "$action" ] || action='block'
+		action="$(ss_artifact_source_action "$action")" || {
+			log_error "Hub API artifact source ${index} has unsupported action"
+			ss_status_add_error "api_response_invalid_artifact_action"
+			return 1
+		}
+
+		source_id="$(ss_json_get_file "$response" "@.artifact.sources[${index}].id")"
+		source_id="$(ss_artifact_source_id "$source_id" "source-${index}")"
+		sha256="$(ss_json_get_file "$response" "@.artifact.sources[${index}].sha256")"
+
+		printf '%s|%s|%s|%s|%s\n' \
+			"$index" "$action" "$source_id" "$url" "$sha256" >>"${SS_RESOLVED_SOURCES}" || return 1
+
+		source_count=$((source_count + 1))
+		case "$action" in
+			block) block_count=$((block_count + 1)) ;;
+			allow) allow_count=$((allow_count + 1)) ;;
+		esac
+		index=$((index + 1))
+	done
+
+	if [ "$source_count" -eq "$max_sources" ] && [ -n "$(ss_json_get_file "$response" "@.artifact.sources[${max_sources}].download_url")" ]; then
+		log_error "Hub API returned more than ${max_sources} artifact sources"
+		ss_status_add_error "api_response_too_many_artifact_sources"
+		return 1
+	fi
+
+	if [ "$source_count" -eq 0 ]; then
+		legacy_url="$(ss_json_get_file "$response" '@.artifact.download_url')"
+		legacy_sha256="$(ss_json_get_file "$response" '@.artifact.sha256')"
+
+		if [ -z "$legacy_url" ]; then
+			log_error "Hub API response did not include artifact.download_url or artifact.sources"
+			ss_status_add_error "api_response_missing_download_url"
+			return 1
+		fi
+
+		printf '0|block|legacy|%s|%s\n' "$legacy_url" "$legacy_sha256" >"${SS_RESOLVED_SOURCES}" || return 1
+		source_count=1
+		block_count=1
+	fi
+
+	if [ "$block_count" -eq 0 ]; then
+		log_error "Hub API response did not include a block artifact source"
+		ss_status_add_error "api_response_missing_block_source"
+		return 1
+	fi
+
+	ss_status_set artifact_source_count "$source_count"
+	ss_status_set artifact_block_source_count "$block_count"
+	ss_status_set artifact_allow_source_count "$allow_count"
+	return 0
+}
+
 ss_resolve_artifact() {
 	local url response payload retries ok
 
@@ -319,7 +414,6 @@ ss_resolve_artifact() {
 		return 1
 	fi
 
-	ss_resolved_download_url="$(ss_json_get_file "$response" '@.artifact.download_url')"
 	ss_resolved_artifact_sha256="$(ss_json_get_file "$response" '@.artifact.sha256')"
 	ss_resolved_artifact_tier="$(ss_json_get_file "$response" '@.artifact.tier')"
 	ss_resolved_artifact_version="$(ss_json_get_file "$response" '@.artifact.version')"
@@ -329,12 +423,10 @@ ss_resolve_artifact() {
 	ss_resolved_license_status="$(ss_json_get_file "$response" '@.license.status')"
 	ss_resolved_device_profile="$(ss_json_get_file "$response" '@.device.profile')"
 
-	if [ -z "$ss_resolved_download_url" ]; then
-		log_error "Hub API response did not include artifact.download_url"
+	ss_resolve_artifact_sources "$response" || {
 		ss_status_set health_api_resolve "0"
-		ss_status_add_error "api_response_missing_download_url"
 		return 1
-	fi
+	}
 
 	ss_status_set health_api_resolve "1"
 	ss_status_set artifact_download_url_present "1"
@@ -347,7 +439,7 @@ ss_resolve_artifact() {
 	ss_status_set license_status "${ss_resolved_license_status:-unlicensed}"
 	ss_status_set device_profile "$ss_resolved_device_profile"
 
-	log_ok "Resolved artifact ${ss_resolved_artifact_tier:-unknown}/${ss_resolved_artifact_version:-unknown} for plan ${ss_resolved_license_plan:-free}"
+	log_ok "Resolved ${ss_resolved_artifact_tier:-unknown}/${ss_resolved_artifact_version:-unknown} artifact sources for plan ${ss_resolved_license_plan:-free}"
 }
 
 ss_verify_artifact_sha256() {
@@ -357,7 +449,6 @@ ss_verify_artifact_sha256() {
 
 	case "$expected" in
 		'' | '...')
-			ss_status_set health_artifact_sha256 ""
 			return 0
 			;;
 	esac
@@ -377,63 +468,163 @@ ss_verify_artifact_sha256() {
 		return 1
 	fi
 
-	ss_status_set health_artifact_sha256 "1"
 	return 0
 }
 
-ss_download_api_artifact() {
-	local output raw_size_kb line_count retries ok
+ss_clear_cached_api_sources() {
+	rm -f \
+		"${SS_TMP_DIR}"/api.*.block.txt \
+		"${SS_TMP_DIR}"/api.*.allow.txt \
+		"${SS_ARTIFACT_CACHE_STATE}" \
+		"${SS_ARTIFACT_CACHE_STATE}.tmp."* \
+		2>/dev/null
+}
 
-	output="$SS_ARTIFACT_RAW"
-	retries=1
-	ok=0
+ss_cached_api_sources_available() {
+	local index action
+	local expected=0
+	local actual=0
 
-	while [ "$retries" -le "$ss_download_retry" ]; do
-		ss_should_stop && return 130
-		log_info "Downloading SafeShield artifact (try ${retries}/${ss_download_retry})"
+	[ -s "${SS_ARTIFACT_CACHE_STATE}" ] || return 1
 
-		if ss_http_get_file "$ss_resolved_download_url" "$output" && [ -s "$output" ]; then
-			ok=1
-			break
-		fi
+	while IFS='|' read -r index action _; do
+		[ -n "$index" ] || continue
+		expected=$((expected + 1))
+		[ -f "${SS_TMP_DIR}/api.${index}.${action}.txt" ] || return 1
+		actual=$((actual + 1))
+	done <"${SS_ARTIFACT_CACHE_STATE}"
 
-		ss_should_stop && return 130
-		retries=$((retries + 1))
-		sleep 1
-	done
+	[ "$expected" -gt 0 ] && [ "$actual" -eq "$expected" ]
+}
 
-	if [ "$ok" != "1" ]; then
-		log_error "Artifact download failed"
+ss_download_api_artifacts() {
+	local index action source_id source_url source_sha256
+	local output normalized raw_size_kb line_count retries ok
+	local downloaded=0
+	local checksum_count=0
+	local cache_state_tmp="${SS_ARTIFACT_CACHE_STATE}.tmp.$$"
+
+	[ -s "${SS_RESOLVED_SOURCES}" ] || {
+		log_error "Resolved artifact source list is unavailable"
 		ss_status_set health_artifact_download "0"
-		ss_status_add_error "artifact_download_failed"
-		return 1
-	fi
-
-	raw_size_kb="$(du -k "$output" 2>/dev/null | awk '{print $1}')"
-	[ -n "$raw_size_kb" ] || raw_size_kb=0
-
-	if [ "$raw_size_kb" -gt "$ss_max_blocklist_file_size_kb" ]; then
-		log_error "downloaded artifact too large (${raw_size_kb} KB > ${ss_max_blocklist_file_size_kb} KB)"
-		ss_status_set health_artifact_download "0"
-		ss_status_add_error "artifact_too_large"
-		rm -f "$output"
-		return 1
-	fi
-
-	ss_verify_artifact_sha256 "$output" "$ss_resolved_artifact_sha256" || {
-		rm -f "$output"
+		ss_status_add_error "artifact_sources_unavailable"
 		return 1
 	}
 
-	ss_normalize_domains <"$output" |
-		ss_filter_valid_domains |
-		sort -u >"$SS_ARTIFACT_DOMAINS"
+	ss_clear_cached_api_sources
+	: >"$cache_state_tmp" || return 1
 
-	line_count="$(grep -c . "$SS_ARTIFACT_DOMAINS" 2>/dev/null)"
-	[ -n "$line_count" ] || line_count=0
+	while IFS='|' read -r index action source_id source_url source_sha256; do
+		[ -n "$source_url" ] || continue
 
+		ss_should_stop && {
+			rm -f "$cache_state_tmp"
+			ss_clear_cached_api_sources
+			return 130
+		}
+
+		output="${SS_TMP_DIR}/artifact.${index}.${action}.raw"
+		normalized="${SS_TMP_DIR}/api.${index}.${action}.txt"
+		retries=1
+		ok=0
+
+		while [ "$retries" -le "$ss_download_retry" ]; do
+			ss_should_stop && {
+				rm -f "$output" "$cache_state_tmp"
+				ss_clear_cached_api_sources
+				return 130
+			}
+
+			log_info "Downloading artifact source ${source_id} (${action}, try ${retries}/${ss_download_retry})"
+
+			if ss_http_get_file "$source_url" "$output" && [ -s "$output" ]; then
+				ok=1
+				break
+			fi
+
+			retries=$((retries + 1))
+			sleep 1
+		done
+
+		if [ "$ok" != "1" ]; then
+			log_error "Artifact source ${source_id} download failed"
+			ss_status_set health_artifact_download "0"
+			ss_status_add_error "artifact_download_failed"
+			rm -f "$output" "$cache_state_tmp"
+			ss_clear_cached_api_sources
+			return 1
+		fi
+
+		raw_size_kb="$(du -k "$output" 2>/dev/null | awk '{print $1}')"
+		[ -n "$raw_size_kb" ] || raw_size_kb=0
+
+		if [ "$raw_size_kb" -gt "$ss_max_blocklist_file_size_kb" ]; then
+			log_error "Artifact source ${source_id} is too large (${raw_size_kb} KB > ${ss_max_blocklist_file_size_kb} KB)"
+			ss_status_set health_artifact_download "0"
+			ss_status_add_error "artifact_too_large"
+			rm -f "$output" "$cache_state_tmp"
+			ss_clear_cached_api_sources
+			return 1
+		fi
+
+		case "$source_sha256" in
+			'' | '...') ;;
+			*) checksum_count=$((checksum_count + 1)) ;;
+		esac
+
+		ss_verify_artifact_sha256 "$output" "$source_sha256" || {
+			log_error "Artifact source ${source_id} checksum verification failed"
+			rm -f "$output" "$cache_state_tmp"
+			ss_clear_cached_api_sources
+			return 1
+		}
+
+		ss_normalize_domains <"$output" |
+			ss_filter_valid_domains |
+			sort -u >"$normalized" || {
+			rm -f "$output" "$normalized" "$cache_state_tmp"
+			ss_clear_cached_api_sources
+			return 1
+		}
+		rm -f "$output"
+
+		line_count="$(grep -c . "$normalized" 2>/dev/null)"
+		[ -n "$line_count" ] || line_count=0
+		printf '%s|%s|%s\n' "$index" "$action" "$source_id" >>"$cache_state_tmp" || {
+			rm -f "$normalized" "$cache_state_tmp"
+			ss_clear_cached_api_sources
+			return 1
+		}
+
+		downloaded=$((downloaded + 1))
+		log_ok "Downloaded artifact source ${source_id} (${action}, ${line_count} unique domains, ${raw_size_kb} KB raw)"
+	done <"${SS_RESOLVED_SOURCES}"
+
+	if [ "$downloaded" -eq 0 ]; then
+		log_error "No artifact sources were downloaded"
+		ss_status_set health_artifact_download "0"
+		ss_status_add_error "artifact_download_failed"
+		rm -f "$cache_state_tmp"
+		ss_clear_cached_api_sources
+		return 1
+	fi
+
+	mv -f "$cache_state_tmp" "${SS_ARTIFACT_CACHE_STATE}" || {
+		rm -f "$cache_state_tmp"
+		ss_clear_cached_api_sources
+		return 1
+	}
+
+	if [ "$checksum_count" -eq "$downloaded" ]; then
+		ss_status_set health_artifact_sha256 "1"
+	elif [ "$checksum_count" -eq 0 ]; then
+		ss_status_set health_artifact_sha256 ""
+	else
+		ss_status_set health_artifact_sha256 ""
+		ss_status_add_warning "artifact_sha256_partial"
+	fi
 	ss_status_set health_artifact_download "1"
-	log_ok "Downloaded artifact (${line_count} unique domains, ${raw_size_kb} KB raw)"
+	log_ok "Downloaded ${downloaded} SafeShield artifact source(s)"
 }
 
 ss_build_local_allowlist() {
@@ -460,92 +651,133 @@ ss_build_local_blocklist() {
 	fi
 }
 
-ss_build_allowlist() {
-	local merged_allow="${SS_TMP_DIR}/allowlist.txt"
-	local f
+ss_filter_domains_shadowed_by_ancestors() {
+	local shadow_file="$1"
+	local input_file="$2"
+	local output_file="$3"
 
-	: >"$merged_allow"
+	[ -f "$input_file" ] || {
+		: >"$output_file"
+		return 0
+	}
 
-	for f in "${SS_TMP_DIR}"/*.allow.txt; do
-		[ -f "$f" ] || continue
-		cat "$f"
-	done | sort -u >"$merged_allow"
+	if [ ! -s "$shadow_file" ]; then
+		cp "$input_file" "$output_file"
+		return $?
+	fi
+
+	awk '
+        FNR == NR {
+            shadow[$0] = 1
+            next
+        }
+
+        /^[a-z0-9._-]+$/ {
+            if (shadow[$0]) {
+                next
+            }
+
+            n = split($0, arr, ".")
+            cur = arr[n]
+
+            for (i = n - 1; i >= 1; i--) {
+                cur = arr[i] "." cur
+                if (shadow[cur]) {
+                    next
+                }
+            }
+
+            print
+        }
+    ' "$shadow_file" "$input_file" >"$output_file"
 }
 
 ss_merge_lists() {
 	local final
-	local allowlist="${SS_TMP_DIR}/allowlist.txt"
+	local api_blocks="${SS_TMP_DIR}/api-blocks.domains"
+	local api_allows="${SS_TMP_DIR}/api-allows.domains"
+	local local_blocks="${SS_TMP_DIR}/local.block.txt"
+	local local_allows="${SS_TMP_DIR}/local.allow.txt"
+	local effective_local_blocks="${SS_TMP_DIR}/effective-local-blocks.domains"
+	local effective_api_allows="${SS_TMP_DIR}/effective-api-allows.domains"
+	local effective_allows="${SS_TMP_DIR}/effective-allows.domains"
+	local effective_api_blocks="${SS_TMP_DIR}/effective-api-blocks.domains"
+	local final_blocks="${SS_TMP_DIR}/final-blocks.domains"
 	local final_size_kb
 	local valid_count
-	local have_blocks=0
-	local i
+	local f
 
 	final="$(ss_blocklist_tmp_path)" || return 1
 	: >"$final" || return 1
+	: >"$api_blocks" || return 1
+	: >"$api_allows" || return 1
 
-	for i in "${SS_TMP_DIR}"/*.block.txt; do
-		ss_should_stop && {
-			rm -f "$final"
-			return 130
-		}
+	for f in "${SS_TMP_DIR}"/api.*.block.txt; do
+		[ -f "$f" ] || continue
+		cat "$f"
+	done | sort -u >"$api_blocks" || {
+		rm -f "$final"
+		return 1
+	}
 
-		[ -f "$i" ] || continue
-		have_blocks=1
-		break
-	done
-
-	if [ "$have_blocks" -eq 1 ]; then
-		if [ -s "$allowlist" ]; then
-			awk '
-                FNR == NR {
-                    allow[$0] = 1
-                    next
-                }
-
-                /^[a-z0-9._-]+$/ {
-                    if (seen[$0]++) {
-                        next
-                    }
-
-                    n = split($0, arr, ".")
-                    cur = arr[n]
-
-                    for (i = n - 1; i >= 1; i--) {
-                        cur = arr[i] "." cur
-                        if (allow[cur]) {
-                            next
-                        }
-                    }
-
-                    print "address=/" $0 "/#"
-                }
-            ' "$allowlist" "${SS_TMP_DIR}"/*.block.txt >"$final" || {
-				rm -f "$final"
-				return 1
-			}
-		else
-			awk '
-                /^[a-z0-9._-]+$/ {
-                    if (seen[$0]++) {
-                        next
-                    }
-
-                    print "address=/" $0 "/#"
-                }
-            ' "${SS_TMP_DIR}"/*.block.txt >"$final" || {
-				rm -f "$final"
-				return 1
-			}
-		fi
-	fi
+	for f in "${SS_TMP_DIR}"/api.*.allow.txt; do
+		[ -f "$f" ] || continue
+		cat "$f"
+	done | sort -u >"$api_allows" || {
+		rm -f "$final"
+		return 1
+	}
 
 	ss_should_stop && {
 		rm -f "$final"
 		return 130
 	}
 
-	if [ -s "$allowlist" ]; then
-		awk '{ print "server=/" $0 "/#" }' "$allowlist" >>"$final" || {
+	# Precedence is intentionally explicit:
+	# local allow > local block > Hub allow > Hub block.
+	# A more-specific dnsmasq server/address rule handles descendant exceptions;
+	# ancestor/equal conflicts are removed here before the final config is built.
+	ss_filter_domains_shadowed_by_ancestors "$local_allows" "$local_blocks" "$effective_local_blocks" || {
+		rm -f "$final"
+		return 1
+	}
+	ss_filter_domains_shadowed_by_ancestors "$effective_local_blocks" "$api_allows" "$effective_api_allows" || {
+		rm -f "$final"
+		return 1
+	}
+	{
+		[ -f "$local_allows" ] && cat "$local_allows"
+		[ -f "$effective_api_allows" ] && cat "$effective_api_allows"
+	} | sort -u >"$effective_allows" || {
+		rm -f "$final"
+		return 1
+	}
+	ss_filter_domains_shadowed_by_ancestors "$effective_allows" "$api_blocks" "$effective_api_blocks" || {
+		rm -f "$final"
+		return 1
+	}
+	{
+		[ -f "$effective_local_blocks" ] && cat "$effective_local_blocks"
+		[ -f "$effective_api_blocks" ] && cat "$effective_api_blocks"
+	} | sort -u >"$final_blocks" || {
+		rm -f "$final"
+		return 1
+	}
+
+	ss_should_stop && {
+		rm -f "$final"
+		return 130
+	}
+
+	if [ -s "$final_blocks" ]; then
+		awk '{ print "address=/" $0 "/#" }' "$final_blocks" >"$final" || {
+			rm -f "$final"
+			return 1
+		}
+	fi
+
+	if [ -s "$effective_allows" ]; then
+		awk '{ print "server=/" $0 "/#" }' "$effective_allows" >>"$final" || {
 			rm -f "$final"
 			return 1
 		}

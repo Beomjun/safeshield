@@ -40,8 +40,9 @@ readonly SS_IDENTITY_DIR="/etc/safeshield"
 readonly SS_IDENTITY_FILE="${SS_IDENTITY_DIR}/identity.env"
 readonly SS_API_PAYLOAD="${SS_TMP_DIR}/resolve-request.json"
 readonly SS_API_RESPONSE="${SS_TMP_DIR}/resolve-response.json"
-readonly SS_ARTIFACT_RAW="${SS_TMP_DIR}/artifact.blocklist.raw"
-readonly SS_ARTIFACT_DOMAINS="${SS_TMP_DIR}/api.block.txt"
+readonly SS_RESOLVED_SOURCES="${SS_TMP_DIR}/resolved-sources.tsv"
+readonly SS_ARTIFACT_CACHE_STATE="${SS_TMP_DIR}/artifact-sources.state"
+readonly SS_MAX_ARTIFACT_SOURCES=16
 readonly SS_PREV_BLOCKLIST_GZ="/tmp/safeshield.prev.blocklist.gz"
 readonly SS_RUNTIME_OUT="${SS_TMP_DIR}/runtime.out"
 readonly SS_REFRESH_LOCK='/var/lock/safeshield-refresh.lock'
@@ -290,7 +291,6 @@ ss_prepare_local_rule_files() {
 		: >"${SS_TMP_DIR}/local.block.txt" || return 1
 	fi
 
-	ss_build_allowlist
 }
 
 ss_mark_local_apply_failure() {
@@ -364,11 +364,11 @@ safeshield_apply_local_rules() {
 		return 0
 	fi
 
-	# api.block.txt is the normalized Hub artifact retained after a successful
-	# refresh. If it is unavailable (for example after reboot), fall back to one
-	# full refresh rather than trying to reconstruct the Hub/local boundary from
-	# the active dnsmasq file.
-	if [ ! -s "${SS_ARTIFACT_DOMAINS}" ]; then
+	# Normalized Hub sources are retained after a successful refresh. If the
+	# complete cached source set is unavailable (for example after reboot), fall
+	# back to one full refresh rather than reconstructing the Hub/local boundary
+	# from the active dnsmasq file.
+	if ! ss_cached_api_sources_available; then
 		log_warn "Cached Hub artifact is unavailable; falling back to full refresh"
 		ss_refresh_lock_close
 		safeshield_force_download
@@ -652,7 +652,7 @@ safeshield_force_download() {
 	fi
 
 	ss_status_set stage "download_artifact"
-	ss_download_api_artifact
+	ss_download_api_artifacts
 	rc=$?
 	case "$rc" in
 		0) ;;

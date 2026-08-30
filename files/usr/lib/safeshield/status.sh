@@ -101,6 +101,9 @@ ss_status_reset_artifact_fields() {
 	ss_status_set artifact_unique_domains "0"
 	ss_status_set artifact_rules "0"
 	ss_status_set artifact_download_url_present "0"
+	ss_status_set artifact_source_count "0"
+	ss_status_set artifact_block_source_count "0"
+	ss_status_set artifact_allow_source_count "0"
 }
 
 ss_status_mark_failure() {

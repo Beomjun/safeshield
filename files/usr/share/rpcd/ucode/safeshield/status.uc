@@ -47,14 +47,17 @@ function build_api_source(data, enabled) {
 
     return {
         section: 'hub_api',
-        name: 'SmartSafeHub API Artifact',
+        name: 'SmartSafeHub API Artifacts',
         action: 'block',
         enabled: enabled,
         last_result: last_result,
         line_count: to_int(data.artifact_unique_domains || data.valid_line_count || 0, 0),
         size_kb: to_int(data.blocklist_file_size_kb || 0, 0),
         artifact_tier: data.artifact_tier || '',
-        artifact_version: data.artifact_version || ''
+        artifact_version: data.artifact_version || '',
+        source_count: to_int(data.artifact_source_count || (to_bool(data.artifact_download_url_present || '0', false) ? 1 : 0), 0),
+        block_source_count: to_int(data.artifact_block_source_count || (to_bool(data.artifact_download_url_present || '0', false) ? 1 : 0), 0),
+        allow_source_count: to_int(data.artifact_allow_source_count || 0, 0)
     };
 }
 
@@ -176,6 +179,9 @@ function build_status() {
     let artifact_unique_domains = to_int(data.artifact_unique_domains || 0, 0);
     let artifact_rules = to_int(data.artifact_rules || 0, 0);
     let artifact_download_url_present = to_bool(data.artifact_download_url_present || '0', false);
+    let artifact_source_count = to_int(data.artifact_source_count || (artifact_download_url_present ? 1 : 0), 0);
+    let artifact_block_source_count = to_int(data.artifact_block_source_count || (artifact_download_url_present ? 1 : 0), 0);
+    let artifact_allow_source_count = to_int(data.artifact_allow_source_count || 0, 0);
 
     let license_plan = data.license_plan || '';
     let license_status = data.license_status || '';
@@ -275,7 +281,10 @@ function build_status() {
             sha256: artifact_sha256,
             unique_domains: artifact_unique_domains,
             rules: artifact_rules,
-            download_url_present: artifact_download_url_present
+            download_url_present: artifact_download_url_present,
+            source_count: artifact_source_count,
+            block_source_count: artifact_block_source_count,
+            allow_source_count: artifact_allow_source_count
         },
 
         local_overrides: {

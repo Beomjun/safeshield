@@ -43,26 +43,64 @@ legacy-v4.example
 legacy-v6.example'
 [ "$normalized" = "$expected" ] || fail 'optimized /# artifact normalization failed'
 
-cat >"$SS_TMP_DIR/api.block.txt" <<'DATA'
+cat >"$SS_TMP_DIR/api.0.block.txt" <<'DATA'
 ads.example
 tracker.example
 ads.example
 DATA
-: >"$SS_TMP_DIR/allowlist.txt"
-
+cat >"$SS_TMP_DIR/api.1.block.txt" <<'DATA'
+phishing.example
+tracker.example
+DATA
+cat >"$SS_TMP_DIR/api.2.allow.txt" <<'DATA'
+tracker.example
+remote-allow.example
+DATA
+cat >"$SS_TMP_DIR/local.block.txt" <<'DATA'
+remote-allow.example
+local-block.example
+DATA
+cat >"$SS_TMP_DIR/local.allow.txt" <<'DATA'
+local-block.example
+DATA
 ss_merge_lists || fail 'ss_merge_lists failed'
 
 expected='address=/ads.example/#
-address=/tracker.example/#'
+address=/phishing.example/#
+address=/remote-allow.example/#
+server=/local-block.example/#
+server=/tracker.example/#'
 actual="$(cat "$SS_BLOCKLIST_FILE")"
 [ "$actual" = "$expected" ] || fail 'active blocklist is not using one /# rule per domain'
 
 count="$(grep -c . "$SS_BLOCKLIST_FILE")"
-[ "$count" = '2' ] || fail 'rule count must equal unique blocked domain count'
+[ "$count" = '5' ] || fail 'rule count must equal effective block/allow rule count'
 
 check_blocklist_rule_present 'ads.example' || fail 'optimized rule verification failed'
 first_domain="$(find_test_domains 1)"
 [ "$first_domain" = 'ads.example' ] || fail 'optimized rule sampling failed'
+
+rm -f "$SS_TMP_DIR"/api.*.block.txt "$SS_TMP_DIR"/api.*.allow.txt
+cat >"$SS_TMP_DIR/api.0.block.txt" <<'DATA'
+example.com
+DATA
+cat >"$SS_TMP_DIR/api.1.allow.txt" <<'DATA'
+good.example.com
+DATA
+cat >"$SS_TMP_DIR/local.block.txt" <<'DATA'
+blocked.good.example.com
+DATA
+cat >"$SS_TMP_DIR/local.allow.txt" <<'DATA'
+allowed.blocked.good.example.com
+DATA
+
+ss_merge_lists || fail 'source precedence merge failed'
+expected='address=/blocked.good.example.com/#
+address=/example.com/#
+server=/allowed.blocked.good.example.com/#
+server=/good.example.com/#'
+actual="$(cat "$SS_BLOCKLIST_FILE")"
+[ "$actual" = "$expected" ] || fail 'source precedence is not local allow > local block > Hub allow > Hub block'
 
 cat >"$SS_BLOCKLIST_FILE" <<'DATA'
 address=/legacy.example/0.0.0.0

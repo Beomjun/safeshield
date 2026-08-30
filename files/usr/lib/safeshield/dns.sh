@@ -64,7 +64,10 @@ ss_clean_tmp() {
 		"${SS_TMP_DIR}"/*.txt \
 		"${SS_TMP_DIR}"/*.raw \
 		"${SS_TMP_DIR}"/*.filtered \
+		"${SS_TMP_DIR}"/*.domains \
 		"${SS_TMP_DIR}"/*.json \
+		"${SS_RESOLVED_SOURCES}" \
+		"${SS_ARTIFACT_CACHE_STATE}" \
 		"${SS_RUNTIME_OUT}" \
 		2>/dev/null
 }

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.16-r1] - 2026-08-30
+
+### Added
+
+- Support multiple Hub artifact sources through `artifact.sources[]` while preserving the legacy single `artifact.download_url` response.
+- Support independent `block` and `allow` actions for remote artifact sources so separately distributed datasets can be combined only at router runtime.
+- Download and SHA-256 verify each remote source independently and cache normalized source files for local-rule reapply operations.
+- Expose resolved block/allow source counts through the SafeShield status API.
+
+### Changed
+
+- Keep downloaded Hub sources separate in tmpfs and merge them only when generating the active dnsmasq blocklist.
+- Define override precedence as local allow > local block > Hub allow > Hub block when multiple source actions overlap.
+
 ## [0.3.15-r2] - 2026-08-30
 
 ### Changed

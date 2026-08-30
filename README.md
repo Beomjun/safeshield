@@ -13,6 +13,7 @@ A lightweight DNS-based ad blocker for OpenWrt, designed with a powerful, easy-t
 - Lightweight design suitable for **low-resource OpenWrt devices**
 - Easy management through the **LuCI Web UI**
 - Automatic blocklist download and refresh
+- Multiple Hub artifact sources with independent block/allow actions and checksum verification
 - Support for **custom allowlist and blocklist**
 - Modular shell-based architecture for easy customization and maintenance
 
@@ -32,6 +33,50 @@ appropriate **dnsmasq**-compatible blocklist for each device.
 
 It helps block ads, trackers, and phishing domains with scheduled updates
 and optional local allow/block overrides.
+
+### Hub artifact source contract
+
+SafeShield accepts both the legacy single-artifact response and the preferred
+multi-source response from the SmartSafeHub Hub API. Existing deployments can
+continue returning `artifact.download_url`.
+
+For multiple independently licensed or managed datasets, the Hub should return
+`artifact.sources`:
+
+```json
+{
+  "artifact": {
+    "tier": "pro",
+    "version": "20260830T120000Z",
+    "sources": [
+      {
+        "id": "hagezi-pro",
+        "action": "block",
+        "download_url": "https://example.invalid/hagezi-pro.txt",
+        "sha256": "..."
+      },
+      {
+        "id": "smartsafehub-pro",
+        "action": "block",
+        "download_url": "https://example.invalid/smartsafehub-pro.txt",
+        "sha256": "..."
+      },
+      {
+        "id": "smartsafehub-allow",
+        "action": "allow",
+        "download_url": "https://example.invalid/smartsafehub-allow.txt",
+        "sha256": "..."
+      }
+    ]
+  }
+}
+```
+
+Each source is downloaded, checksum-verified, normalized, and retained as an
+independent runtime cache file. SafeShield merges all block and allow sources
+only on the router when generating the active dnsmasq configuration. This keeps
+the Hub artifacts separate while preserving override precedence as `local allow`
+> `local block` > `Hub allow` > `Hub block`.
 
 ## System Requirements
 
