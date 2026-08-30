@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.15-r2] - 2026-08-30
+
+### Changed
+
+- Add an installed third-party data notice for HaGeZi-derived DNS blocklist artifacts.
+- Install a GPL-3.0 license copy alongside the notice so the applicable terms are available on-device.
+
 ## [0.3.15-r1] - 2026-08-30
 
 - Bump version for release.

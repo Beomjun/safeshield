@@ -456,6 +456,14 @@ https://github.com/Junatum/safeshield/issues
 
 Bug reports and pull requests are welcome.
 
+## Third-party blocklist data
+
+SafeShield may install SmartSafeHub artifacts derived from third-party DNS
+blocklists, including [HaGeZi's DNS Blocklists](https://github.com/hagezi/dns-blocklists).
+HaGeZi-derived artifacts remain subject to GNU GPL v3.0. See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the upstream project,
+license, source inventory, and installed notice location.
+
 ## License
 
 SafeShield is under the [GNU Public License version 3](https://www.gnu.org/licenses/gpl-3.0.html)
