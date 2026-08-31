@@ -169,15 +169,28 @@ ss_get_or_create_physical_fingerprint() {
 	printf '%s' "$SS_PHYSICAL_FINGERPRINT"
 }
 
+ss_read_installed_version() {
+	local version_file="${SS_VERSION_FILE:-/usr/lib/safeshield/version}"
+	local version=""
+
+	if [ -r "$version_file" ]; then
+		version="$(head -n 1 "$version_file" 2>/dev/null | tr -d '\r\n')"
+	fi
+
+	[ -n "$version" ] || version='unknown'
+	printf '%s' "$version"
+}
+
 ss_write_resolve_payload() {
 	local out="$1"
-	local model vendor arch memory physical_fingerprint
+	local model vendor arch memory physical_fingerprint safeshield_version
 
 	model="$(ss_detect_device_model)"
 	vendor="$(ss_detect_device_vendor "$model")"
 	arch="$(ss_detect_device_arch)"
 	memory="$(ss_detect_device_memory_mb)"
 	physical_fingerprint="$(ss_get_or_create_physical_fingerprint "$model" "$arch")" || return 1
+	safeshield_version="$(ss_read_installed_version)"
 
 	is_valid_integer "$memory" || memory="0"
 
@@ -191,6 +204,7 @@ ss_write_resolve_payload() {
 
 	cat >"$out" <<__SAFESHIELD_JSON__
 {
+  "safeshield_version": $(ss_json_value "$safeshield_version"),
   "license_key": $(ss_json_value "$ss_license_key"),
   "device": {
     "physical_fingerprint": $(ss_json_value "$physical_fingerprint"),

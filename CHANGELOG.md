@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.18-r1] - 2026-09-01
+
+### Added
+
+- Include the installed SafeShield package version in Hub artifact resolve requests for operational diagnostics and compatibility analysis.
+
 ## [0.3.17-r1] - 2026-08-30
 
 - Bump version for release.
