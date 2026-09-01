@@ -1,4 +1,5 @@
 /etc/safeshield/identity.env
 /etc/safeshield/allowlist
 /etc/safeshield/blocklist
+/etc/safeshield/statistics-state.tsv
 /etc/config/safeshield

@@ -13,7 +13,6 @@ let read_json_file = core.read_json_file;
 let to_bool = core.to_bool;
 let to_int = core.to_int;
 let service_instance_running = runtime.service_instance_running;
-
 function sanitize_hourly(items) {
     let result = [];
 
@@ -29,7 +28,8 @@ function sanitize_hourly(items) {
         push(result, {
             bucket_start: to_int(item.bucket_start, 0),
             queries: to_int(item.queries, 0),
-            blocked: to_int(item.blocked, 0)
+            blocked: to_int(item.blocked, 0),
+            hourly: sanitize_hourly(item.hourly)
         });
     }
 
@@ -38,7 +38,6 @@ function sanitize_hourly(items) {
 
 function sanitize_devices(items) {
     let result = [];
-
     if (type(items) != 'array') {
         return result;
     }
@@ -52,7 +51,6 @@ function sanitize_devices(items) {
         if (!id) {
             continue;
         }
-
         push(result, {
             id: id,
             mac: sprintf('%s', item.mac || ''),
@@ -69,13 +67,11 @@ function sanitize_devices(items) {
 
 function build_statistics() {
     reload_uci();
-
     let enabled = to_bool(cfg('statistics_enabled', '1'), true);
     let retention_hours = to_int(cfg('statistics_retention_hours', '168'), 168);
     let snapshot_interval_s = to_int(cfg('statistics_snapshot_interval_s', '60'), 60);
     let data = read_json_file(STATISTICS_FILE, {});
     let totals = (type(data.totals) == 'object') ? data.totals : {};
-
     return {
         schema: {
             name: STATISTICS_SCHEMA_NAME,
@@ -84,11 +80,15 @@ function build_statistics() {
         enabled: enabled,
         available: !!data.schema,
         collector_running: service_instance_running(PKG_NAME, 'statistics'),
-        volatile: true,
-        storage: 'tmpfs',
+        volatile: to_bool(data.volatile, true),
+        storage: sprintf('%s', data.storage || 'tmpfs'),
+        persistent: to_bool(data.persistent, false),
+        persistent_updated_at: to_int(data.persistent_updated_at, 0),
+        persistent_checkpoint_interval_s: to_int(data.persistent_checkpoint_interval_s, 3600),
         snapshot_interval_s: snapshot_interval_s,
         retention_hours: retention_hours,
         started_at: to_int(data.started_at, 0),
+        session_started_at: to_int(data.session_started_at, 0),
         updated_at: to_int(data.updated_at, 0),
         totals: {
             queries: to_int(totals.queries, 0),
@@ -100,7 +100,6 @@ function build_statistics() {
         devices: sanitize_devices(data.devices)
     };
 }
-
 return {
     build: build_statistics
 };

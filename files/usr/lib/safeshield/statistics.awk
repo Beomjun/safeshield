@@ -20,12 +20,25 @@ function hour_start(epoch) {
 	return int(epoch / 3600) * 3600
 }
 
-function prune_buckets(now,    cutoff, bucket) {
+function device_bucket_key(key, bucket) {
+	return key SUBSEP bucket
+}
+
+function prune_buckets(now,    cutoff, bucket, composite, parts) {
 	cutoff = hour_start(now) - ((retention_hours - 1) * 3600)
 	for (bucket in queries) {
 		if ((bucket + 0) < cutoff) {
 			delete queries[bucket]
 			delete blocked[bucket]
+		}
+	}
+
+	for (composite in device_hour_queries) {
+		split(composite, parts, SUBSEP)
+		bucket = parts[2] + 0
+		if (bucket < cutoff) {
+			delete device_hour_queries[composite]
+			delete device_hour_blocked[composite]
 		}
 	}
 }
@@ -40,7 +53,7 @@ function decode_state_field(value) {
 	return (value == "*") ? "" : value
 }
 
-function remove_device(key) {
+function remove_device_metadata(key) {
 	if (!(key in device_seen)) {
 		return
 	}
@@ -52,6 +65,22 @@ function remove_device(key) {
 	delete device_queries[key]
 	delete device_blocked[key]
 	device_count--
+}
+
+function remove_device(key,    composite, parts) {
+	if (!(key in device_seen)) {
+		return
+	}
+
+	for (composite in device_hour_queries) {
+		split(composite, parts, SUBSEP)
+		if (parts[1] == key) {
+			delete device_hour_queries[composite]
+			delete device_hour_blocked[composite]
+		}
+	}
+
+	remove_device_metadata(key)
 }
 
 function register_device(key, mac, ip, hostname,    selected) {
@@ -99,8 +128,12 @@ function register_device(key, mac, ip, hostname,    selected) {
 	return selected
 }
 
-function load_state(    line, fields, count, bucket, key, mac, ip, hostname) {
-	while ((getline line < state_file) > 0) {
+function load_state_file(path,    line, fields, count, bucket, key, mac, ip, hostname, composite) {
+	if (path == "") {
+		return 0
+	}
+
+	while ((getline line < path) > 0) {
 		count = split(line, fields, "\t")
 		if (count >= 5 && fields[1] == "meta") {
 			started_at = numeric(fields[2], 0)
@@ -110,6 +143,16 @@ function load_state(    line, fields, count, bucket, key, mac, ip, hostname) {
 			if (count >= 6) {
 				devices_truncated = numeric(fields[6], 0) ? 1 : 0
 			}
+			if (count >= 7) {
+				persistent_updated_at = numeric(fields[7], 0)
+			}
+			if (count >= 8) {
+				state_schema_version = numeric(fields[8], 1)
+			}
+			if (count >= 9) {
+				loaded_session_started_at = numeric(fields[9], 0)
+			}
+			loaded_state = 1
 		}
 		else if (count >= 4 && fields[1] == "bucket") {
 			bucket = numeric(fields[2], 0)
@@ -125,12 +168,47 @@ function load_state(    line, fields, count, bucket, key, mac, ip, hostname) {
 			hostname = decode_state_field(fields[5])
 			key = register_device(key, mac, ip, hostname)
 			if (key != "") {
-				device_queries[key] += numeric(fields[6], 0)
-				device_blocked[key] += numeric(fields[7], 0)
+				legacy_device_queries[key] += numeric(fields[6], 0)
+				legacy_device_blocked[key] += numeric(fields[7], 0)
+			}
+		}
+		else if (count >= 5 && fields[1] == "device_bucket") {
+			key = decode_state_field(fields[2])
+			bucket = numeric(fields[3], 0)
+			if (key != "" && bucket > 0) {
+				key = register_device(key, "", "", "")
+				if (key != "") {
+					composite = device_bucket_key(key, bucket)
+					device_hour_queries[composite] += numeric(fields[4], 0)
+					device_hour_blocked[composite] += numeric(fields[5], 0)
+					device_has_hourly[key] = 1
+				}
 			}
 		}
 	}
-	close(state_file)
+	close(path)
+	return loaded_state
+}
+
+function migrate_legacy_device_totals(now,    key, bucket, composite) {
+	if (state_schema_version >= 2) {
+		return
+	}
+
+	bucket = hour_start((updated_at > 0) ? updated_at : now)
+	for (key in device_seen) {
+		if (device_has_hourly[key]) {
+			continue
+		}
+		if ((legacy_device_queries[key] + 0) == 0 && (legacy_device_blocked[key] + 0) == 0) {
+			continue
+		}
+
+		composite = device_bucket_key(key, bucket)
+		device_hour_queries[composite] += legacy_device_queries[key] + 0
+		device_hour_blocked[composite] += legacy_device_blocked[key] + 0
+		device_has_hourly[key] = 1
+	}
 }
 
 function refresh_leases(now, force,    line, fields, count, mac, ip, hostname) {
@@ -163,20 +241,42 @@ function refresh_leases(now, force,    line, fields, count, mac, ip, hostname) {
 	last_lease_refresh = now
 }
 
-function migrate_ip_device(ip_key, mac_key, ip, hostname,    old_queries, old_blocked, selected) {
+function move_device_hours(from_key, to_key,    composite, parts, bucket, target) {
+	if (from_key == to_key) {
+		return
+	}
+
+	for (composite in device_hour_queries) {
+		split(composite, parts, SUBSEP)
+		if (parts[1] != from_key) {
+			continue
+		}
+
+		bucket = parts[2] + 0
+		target = device_bucket_key(to_key, bucket)
+		device_hour_queries[target] += device_hour_queries[composite] + 0
+		device_hour_blocked[target] += device_hour_blocked[composite] + 0
+		delete device_hour_queries[composite]
+		delete device_hour_blocked[composite]
+	}
+	device_has_hourly[to_key] = 1
+}
+
+function migrate_ip_device(ip_key, mac_key, ip, hostname,    selected) {
 	if (!(ip_key in device_seen) || ip_key == mac_key) {
 		return register_device(mac_key, mac_key, ip, hostname)
 	}
 
-	old_queries = device_queries[ip_key] + 0
-	old_blocked = device_blocked[ip_key] + 0
-	remove_device(ip_key)
-
+	# Replacing an existing temporary IP identity must not consume an extra
+	# device slot. Remove only its metadata first, keep the hourly buckets, then
+	# move those buckets after the stable MAC identity has been registered.
+	remove_device_metadata(ip_key)
 	selected = register_device(mac_key, mac_key, ip, hostname)
-	if (selected != "") {
-		device_queries[selected] += old_queries
-		device_blocked[selected] += old_blocked
+	if (selected == "") {
+		return ""
 	}
+
+	move_device_hours(ip_key, selected)
 	return selected
 }
 
@@ -197,17 +297,53 @@ function device_key_for_ip(ip, now,    mac, hostname, ip_key) {
 	return register_device(ip_key, "", ip, "")
 }
 
-function record_device(ip, query_delta, blocked_delta, now,    key) {
+function record_device(ip, query_delta, blocked_delta, now,    key, bucket, composite) {
 	key = device_key_for_ip(ip, now)
 	if (key == "") {
 		return
 	}
 
+	bucket = hour_start(now)
+	composite = device_bucket_key(key, bucket)
+	device_hour_queries[composite] += 0
+	device_hour_blocked[composite] += 0
 	if (query_delta > 0) {
-		device_queries[key] += query_delta
+		device_hour_queries[composite] += query_delta
 	}
 	if (blocked_delta > 0) {
-		device_blocked[key] += blocked_delta
+		device_hour_blocked[composite] += blocked_delta
+	}
+	device_has_hourly[key] = 1
+}
+
+function recompute_totals(    bucket, composite, parts, key, stale_count, i) {
+	total_queries = 0
+	total_blocked = 0
+	for (bucket in queries) {
+		total_queries += queries[bucket] + 0
+		total_blocked += blocked[bucket] + 0
+	}
+
+	for (key in device_seen) {
+		device_queries[key] = 0
+		device_blocked[key] = 0
+	}
+	for (composite in device_hour_queries) {
+		split(composite, parts, SUBSEP)
+		key = parts[1]
+		device_queries[key] += device_hour_queries[composite] + 0
+		device_blocked[key] += device_hour_blocked[composite] + 0
+	}
+
+	stale_count = 0
+	for (key in device_seen) {
+		if ((device_queries[key] + 0) == 0 && (device_blocked[key] + 0) == 0) {
+			stale_devices[++stale_count] = key
+		}
+	}
+	for (i = 1; i <= stale_count; i++) {
+		remove_device(stale_devices[i])
+		delete stale_devices[i]
 	}
 }
 
@@ -255,12 +391,15 @@ function replace_file(tmp, final,    rc) {
 	return rc == 0
 }
 
-function save_state(now,    tmp, bucket, cutoff, key) {
-	prune_buckets(now)
-	updated_at = now
-	tmp = state_file ".tmp"
+function save_state_file(path, now,    tmp, bucket, cutoff, key, composite, parts) {
+	if (path == "") {
+		return 0
+	}
 
-	printf "meta\t%d\t%d\t%d\t%d\t%d\n", started_at, updated_at, total_queries, total_blocked, devices_truncated > tmp
+	tmp = path ".tmp"
+	printf "meta\t%d\t%d\t%d\t%d\t%d\t%d\t2\t%d\n", \
+		started_at, updated_at, total_queries, total_blocked, devices_truncated, \
+		persistent_updated_at, session_started_at > tmp
 	cutoff = hour_start(now) - ((retention_hours - 1) * 3600)
 	for (bucket = cutoff; bucket <= hour_start(now); bucket += 3600) {
 		if ((bucket in queries) || (bucket in blocked)) {
@@ -276,16 +415,52 @@ function save_state(now,    tmp, bucket, cutoff, key) {
 			device_queries[key] + 0, \
 			device_blocked[key] + 0 >> tmp
 	}
+	for (composite in device_hour_queries) {
+		split(composite, parts, SUBSEP)
+		if ((parts[2] + 0) < cutoff) {
+			continue
+		}
+		printf "device_bucket\t%s\t%d\t%d\t%d\n", \
+			normalize_state_field(parts[1]), \
+			parts[2] + 0, \
+			device_hour_queries[composite] + 0, \
+			device_hour_blocked[composite] + 0 >> tmp
+	}
 	close(tmp)
 
-	if (!replace_file(tmp, state_file)) {
+	if (!replace_file(tmp, path)) {
 		return 0
 	}
-
 	return 1
 }
 
-function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma, key, identified) {
+function schedule_next_persistent(now) {
+	next_persistent_at = hour_start(now) + persistent_interval
+	while (next_persistent_at <= now) {
+		next_persistent_at += persistent_interval
+	}
+}
+
+function maybe_save_persistent(now, force,    previous_updated) {
+	if (persistent_state_file == "") {
+		return 1
+	}
+	if (!force && now < next_persistent_at) {
+		return 1
+	}
+
+	previous_updated = persistent_updated_at
+	persistent_updated_at = now
+	if (!save_state_file(persistent_state_file, now)) {
+		persistent_updated_at = previous_updated
+		return 0
+	}
+
+	schedule_next_persistent(now)
+	return 1
+}
+
+function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma, key, identified, device_comma, composite, persistent, truncated) {
 	tmp = json_file ".tmp"
 	current_hour = hour_start(now)
 	cutoff = current_hour - ((retention_hours - 1) * 3600)
@@ -294,10 +469,15 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 		first_hour = cutoff
 	}
 
-	printf "{\"schema\":{\"name\":\"safeshield.statistics\",\"version\":1}," > tmp
-	printf "\"volatile\":true,\"started_at\":%d,\"updated_at\":%d,", started_at, now >> tmp
+	persistent = (persistent_state_file != "") ? "true" : "false"
+	truncated = devices_truncated ? "true" : "false"
+
+	printf "{\"schema\":{\"name\":\"safeshield.statistics\",\"version\":2}," > tmp
+	printf "\"volatile\":false,\"storage\":\"tmpfs+flash\",\"persistent\":%s,", persistent >> tmp
+	printf "\"persistent_updated_at\":%d,\"persistent_checkpoint_interval_s\":%d,", persistent_updated_at, persistent_interval >> tmp
+	printf "\"started_at\":%d,\"session_started_at\":%d,\"updated_at\":%d,", started_at, session_started_at, now >> tmp
 	printf "\"retention_hours\":%d,", retention_hours >> tmp
-	printf "\"device_limit\":%d,\"devices_truncated\":%s,", max_devices, devices_truncated ? "true" : "false" >> tmp
+	printf "\"device_limit\":%d,\"devices_truncated\":%s,", max_devices, truncated >> tmp
 	printf "\"totals\":{\"queries\":%d,\"blocked\":%d},", total_queries, total_blocked >> tmp
 	printf "\"hourly\":[" >> tmp
 
@@ -311,7 +491,7 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 	comma = ""
 	for (key in device_seen) {
 		identified = (device_mac[key] != "") ? "true" : "false"
-		printf "%s{\"id\":\"%s\",\"mac\":\"%s\",\"ip\":\"%s\",\"hostname\":\"%s\",\"identified\":%s,\"queries\":%d,\"blocked\":%d}", \
+		printf "%s{\"id\":\"%s\",\"mac\":\"%s\",\"ip\":\"%s\",\"hostname\":\"%s\",\"identified\":%s,\"queries\":%d,\"blocked\":%d,\"hourly\":[", \
 			comma, \
 			json_escape(key), \
 			json_escape(device_mac[key]), \
@@ -320,6 +500,18 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 			identified, \
 			device_queries[key] + 0, \
 			device_blocked[key] + 0 >> tmp
+
+		device_comma = ""
+		for (bucket = first_hour; bucket <= current_hour; bucket += 3600) {
+			composite = device_bucket_key(key, bucket)
+			if (!((composite in device_hour_queries) || (composite in device_hour_blocked))) {
+				continue
+			}
+			printf "%s{\"bucket_start\":%d,\"queries\":%d,\"blocked\":%d}", \
+				device_comma, bucket, device_hour_queries[composite] + 0, device_hour_blocked[composite] + 0 >> tmp
+			device_comma = ","
+		}
+		printf "]}" >> tmp
 		comma = ","
 	}
 	printf "]}\n" >> tmp
@@ -328,8 +520,13 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 	return replace_file(tmp, json_file)
 }
 
-function save_snapshot(now) {
-	if (!save_state(now)) {
+function save_snapshot(now, force_persistent) {
+	prune_buckets(now)
+	recompute_totals()
+	updated_at = now
+	maybe_save_persistent(now, force_persistent)
+
+	if (!save_state_file(state_file, now)) {
 		return 0
 	}
 	if (!save_json(now)) {
@@ -342,13 +539,13 @@ function save_snapshot(now) {
 function record_event(query_delta, blocked_delta, client_ip,    now, bucket) {
 	now = current_time()
 	bucket = hour_start(now)
+	queries[bucket] += 0
+	blocked[bucket] += 0
 
 	if (query_delta > 0) {
-		total_queries += query_delta
 		queries[bucket] += query_delta
 	}
 	if (blocked_delta > 0) {
-		total_blocked += blocked_delta
 		blocked[bucket] += blocked_delta
 	}
 
@@ -356,17 +553,19 @@ function record_event(query_delta, blocked_delta, client_ip,    now, bucket) {
 
 	event_index++
 	if ((now - last_snapshot) >= snapshot_interval) {
-		save_snapshot(now)
+		save_snapshot(now, 0)
 	}
 }
 
 BEGIN {
 	state_file = (state_file != "") ? state_file : "/tmp/safeshield/statistics/state.tsv"
 	json_file = (json_file != "") ? json_file : "/tmp/safeshield/statistics/statistics.json"
+	persistent_state_file = (persistent_state_file != "") ? persistent_state_file : ""
 	lease_file = (lease_file != "") ? lease_file : "/tmp/dhcp.leases"
 	snapshot_interval = numeric(snapshot_interval, 60)
 	retention_hours = numeric(retention_hours, 168)
 	lease_refresh_interval = numeric(lease_refresh_interval, 60)
+	persistent_interval = numeric(persistent_interval, 3600)
 	max_devices = numeric(max_devices, 128)
 	fixed_now = numeric(fixed_now, 0)
 	fixed_step = numeric(fixed_step, 0)
@@ -374,6 +573,9 @@ BEGIN {
 	device_count = 0
 	devices_truncated = 0
 	last_lease_refresh = 0
+	loaded_state = 0
+	state_schema_version = 1
+	persistent_updated_at = 0
 
 	if (snapshot_interval < 1) {
 		snapshot_interval = 60
@@ -384,22 +586,31 @@ BEGIN {
 	if (lease_refresh_interval < 1) {
 		lease_refresh_interval = 60
 	}
+	if (persistent_interval < 60) {
+		persistent_interval = 3600
+	}
 	if (max_devices < 1) {
 		max_devices = 128
 	}
 
-	load_state()
+	if (!load_state_file(state_file) && persistent_state_file != "") {
+		load_state_file(persistent_state_file)
+	}
+
 	if (started_at <= 0) {
 		started_at = current_time()
 	}
-	last_snapshot = updated_at
-	if (last_snapshot <= 0) {
-		last_snapshot = started_at
-	}
-
+	session_started_at = current_time()
+	migrate_legacy_device_totals(current_time())
 	refresh_leases(current_time(), 1)
 	prune_buckets(current_time())
-	save_snapshot(current_time())
+	recompute_totals()
+	last_snapshot = updated_at
+	if (last_snapshot <= 0) {
+		last_snapshot = session_started_at
+	}
+	schedule_next_persistent(current_time())
+	save_snapshot(current_time(), 0)
 }
 
 /dnsmasq\[[0-9]+\]:/ {
@@ -415,5 +626,5 @@ BEGIN {
 }
 
 END {
-	save_snapshot(current_time())
+	save_snapshot(current_time(), 1)
 }

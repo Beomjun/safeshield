@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.18-r2] - 2026-09-01
+
+### Added
+
+- Persist retained global and per-device hourly SafeShield statistics across router reboots.
+- Expose per-device hourly buckets through the statistics API for accurate local history and future cloud ingestion.
+
+### Changed
+
+- Keep 60-second hot snapshots in tmpfs while checkpointing aggregate statistics to flash at most once per hour and on graceful collector shutdown.
+- Restore persistent statistics after reboot, retain up to 168 hourly buckets, and migrate version 1 per-device cumulative counters without dropping totals.
+- Keep the persistent statistics checkpoint across sysupgrade.
+
 ## [0.3.18-r1] - 2026-09-01
 
 ### Added

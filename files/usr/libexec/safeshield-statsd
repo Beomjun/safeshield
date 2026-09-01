@@ -5,10 +5,13 @@
 # shellcheck disable=SC2154
 LC_ALL=C
 export LC_ALL
+umask 077
 
 SS_STATSD_FUNCTIONS_LIB="${SS_STATSD_FUNCTIONS_LIB:-/lib/functions.sh}"
 SS_STATSD_CORE_LIB="${SS_STATSD_CORE_LIB:-/usr/lib/safeshield/core.sh}"
 SS_STATSD_AWK_PROGRAM="${SS_STATSD_AWK_PROGRAM:-/usr/lib/safeshield/statistics.awk}"
+SS_STATSD_PERSISTENT_STATE_FILE="${SS_STATSD_PERSISTENT_STATE_FILE:-/etc/safeshield/statistics-state.tsv}"
+SS_STATSD_PERSISTENT_INTERVAL_S="${SS_STATSD_PERSISTENT_INTERVAL_S:-3600}"
 
 # shellcheck disable=SC1090
 . "$SS_STATSD_FUNCTIONS_LIB"
@@ -30,15 +33,17 @@ stats_process_running() {
 stats_cleanup() {
 	trap - EXIT HUP INT TERM
 
+	# Stop the FIFO writer first. awk then receives EOF and runs its END block,
+	# which performs the graceful persistent statistics checkpoint.
 	if stats_process_running "$stats_logread_pid"; then
 		kill "$stats_logread_pid" 2>/dev/null || true
 	fi
-	if stats_process_running "$stats_awk_pid"; then
-		kill "$stats_awk_pid" 2>/dev/null || true
-	fi
 
 	[ -n "$stats_logread_pid" ] && wait "$stats_logread_pid" 2>/dev/null || true
+	stats_logread_pid=''
+
 	[ -n "$stats_awk_pid" ] && wait "$stats_awk_pid" 2>/dev/null || true
+	stats_awk_pid=''
 
 	[ -n "$stats_fifo" ] && rm -f "$stats_fifo"
 
@@ -100,6 +105,8 @@ stats_run_collector() {
 	awk \
 		-v state_file="${SS_STATISTICS_STATE_FILE}" \
 		-v json_file="${SS_STATISTICS_JSON_FILE}" \
+		-v persistent_state_file="${SS_STATSD_PERSISTENT_STATE_FILE}" \
+		-v persistent_interval="${SS_STATSD_PERSISTENT_INTERVAL_S}" \
 		-v snapshot_interval="${snapshot_interval}" \
 		-v retention_hours="${retention_hours}" \
 		-v lease_file="${lease_file}" \
@@ -137,7 +144,7 @@ main() {
 		return 1
 	}
 
-	mkdir -p "${SS_STATISTICS_DIR}" || return 1
+	mkdir -p "${SS_STATISTICS_DIR}" "${SS_STATSD_PERSISTENT_STATE_FILE%/*}" || return 1
 	stats_acquire_lock || return 0
 
 	trap 'stats_cleanup' EXIT
@@ -153,7 +160,7 @@ main() {
 		[ -n "$configured_lease_file" ] && lease_file="$configured_lease_file"
 	fi
 
-	log_info "Starting statistics collector (snapshot=${snapshot_interval}s retention=${retention_hours}h)"
+	log_info "Starting statistics collector (snapshot=${snapshot_interval}s retention=${retention_hours}h persistent=${SS_STATSD_PERSISTENT_INTERVAL_S}s)"
 
 	stats_run_collector "$snapshot_interval" "$retention_hours" "$lease_file" || rc=$?
 	return "$rc"

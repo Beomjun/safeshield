@@ -12,7 +12,6 @@ mkdir -p "$TMP/bin" "$TMP/statistics"
 cat >"$TMP/functions.sh" <<'EOF_FUNCTIONS'
 # test stub
 EOF_FUNCTIONS
-
 cat >"$TMP/core.sh" <<EOF_CORE
 ss_enabled=1
 ss_statistics_enabled=1
@@ -27,7 +26,6 @@ log_info() { :; }
 log_warn() { :; }
 log_error() { printf '%s\n' "\$*" >&2; }
 EOF_CORE
-
 cat >"$TMP/bin/logread" <<'EOF_LOGREAD'
 #!/bin/sh
 printf '%s\n' "$$" >"$LOGREAD_PID_FILE"
@@ -48,11 +46,11 @@ chmod 755 "$TMP/bin/logread" "$TMP/bin/awk"
 LOGREAD_PID_FILE="$TMP/logread.pid"
 AWK_PID_FILE="$TMP/awk.pid"
 export LOGREAD_PID_FILE AWK_PID_FILE
-
 PATH="$TMP/bin:$PATH" \
 	SS_STATSD_FUNCTIONS_LIB="$TMP/functions.sh" \
 	SS_STATSD_CORE_LIB="$TMP/core.sh" \
 	SS_STATSD_AWK_PROGRAM="$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	SS_STATSD_PERSISTENT_STATE_FILE="$TMP/statistics-state.tsv" \
 	sh "$ROOT/files/usr/libexec/safeshield-statsd" &
 STATSD_PID=$!
 
@@ -65,14 +63,12 @@ while [ ! -s "$LOGREAD_PID_FILE" ] || [ ! -s "$AWK_PID_FILE" ]; do
 	}
 	sleep 0.02
 done
-
 LOGREAD_PID="$(cat "$LOGREAD_PID_FILE")"
 AWK_PID="$(cat "$AWK_PID_FILE")"
 
 kill -TERM "$STATSD_PID"
 wait "$STATSD_PID" 2>/dev/null || true
 STATSD_PID=''
-
 sleep 0.05
 if kill -0 "$LOGREAD_PID" 2>/dev/null; then
 	echo "logread child survived statistics collector termination: $LOGREAD_PID" >&2
@@ -90,5 +86,4 @@ if find "$TMP/statistics" -maxdepth 1 -name 'events.*' | grep . >/dev/null; then
 	echo 'statistics collector FIFO was not removed' >&2
 	exit 1
 fi
-
 printf '%s\n' 'statistics collector lifecycle tests: ok'

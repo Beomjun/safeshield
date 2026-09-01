@@ -354,17 +354,19 @@ ubus call safeshield statistics
 ```
 
 Statistics are collected from live dnsmasq query logging. Raw queried domains
-are never written to the statistics state. In addition to global and hourly
-query/block counters, SafeShield keeps per-device query/block totals locally.
-DHCP clients are identified by MAC address using the dnsmasq lease file, with
-the current IP and hostname included for the local UI. Clients that cannot be
-matched to a DHCP lease use a temporary IP-based identity. Device statistics
-are capped at 128 identities to bound memory use on low-end routers.
-
-Data lives under `/tmp/safeshield/statistics/`, is retained for up to 168
-hourly buckets, and is intentionally reset on reboot to avoid flash writes.
-The collector starts `logread` in follow-only mode, so existing system log
-entries are not counted a second time when the service restarts.
+are never written to the statistics state. In addition to global hourly
+query/block counters, SafeShield keeps per-device totals and per-device hourly
+buckets locally. DHCP clients are identified by MAC address using the dnsmasq
+lease file, with the current IP and hostname included for the local UI. Clients
+that cannot be matched to a DHCP lease use a temporary IP-based identity.
+Device statistics are capped at 128 identities to bound memory use on low-end
+routers.
+Hot statistics live under `/tmp/safeshield/statistics/` and are retained for up
+to 168 hourly buckets. Aggregate state is checkpointed atomically to
+`/etc/safeshield/statistics-state.tsv` at most once per hour and on graceful
+collector shutdown, then restored after reboot. The collector starts `logread`
+in follow-only mode, so existing system log entries are not counted a second
+time when the service restarts.
 
 The default statistics settings are:
 
@@ -377,9 +379,10 @@ statistics_retention_hours=168
 When statistics are enabled, SafeShield adds `log-queries=extra` and
 `log-async=25` to its managed dnsmasq configuration. The `extra` mode provides
 the requestor address needed to attribute block responses to local devices.
-Disabling statistics removes those settings and stops the collector. dnsmasq query messages still
-pass through the normal in-memory OpenWrt system log while collection is
-enabled; SafeShield itself persists only aggregate counters under `/tmp`.
+Disabling statistics removes those settings and stops the collector. dnsmasq
+query messages still pass through the normal in-memory OpenWrt system log while
+collection is enabled; SafeShield persists aggregate counters only, never raw
+DNS query names.
 
 The blocked counter tracks dnsmasq null-address (`0.0.0.0` / `::`) responses.
 On SmartSafeHub images these responses are expected to come from SafeShield.
