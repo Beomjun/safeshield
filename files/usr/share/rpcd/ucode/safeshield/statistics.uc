@@ -28,8 +28,7 @@ function sanitize_hourly(items) {
         push(result, {
             bucket_start: to_int(item.bucket_start, 0),
             queries: to_int(item.queries, 0),
-            blocked: to_int(item.blocked, 0),
-            hourly: sanitize_hourly(item.hourly)
+            blocked: to_int(item.blocked, 0)
         });
     }
 
@@ -58,7 +57,8 @@ function sanitize_devices(items) {
             hostname: sprintf('%s', item.hostname || ''),
             identified: to_bool(item.identified, false),
             queries: to_int(item.queries, 0),
-            blocked: to_int(item.blocked, 0)
+            blocked: to_int(item.blocked, 0),
+            hourly: sanitize_hourly(item.hourly)
         });
     }
 
@@ -83,6 +83,10 @@ function build_statistics() {
         volatile: to_bool(data.volatile, true),
         storage: sprintf('%s', data.storage || 'tmpfs'),
         persistent: to_bool(data.persistent, false),
+        persistence_enabled: to_bool(data.persistence_enabled, false),
+        persistence_healthy: to_bool(data.persistence_healthy, false),
+        persistent_error_count: to_int(data.persistent_error_count, 0),
+        persistent_last_error_at: to_int(data.persistent_last_error_at, 0),
         persistent_updated_at: to_int(data.persistent_updated_at, 0),
         persistent_checkpoint_interval_s: to_int(data.persistent_checkpoint_interval_s, 3600),
         snapshot_interval_s: snapshot_interval_s,

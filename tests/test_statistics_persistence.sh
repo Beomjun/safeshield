@@ -100,4 +100,105 @@ grep -F '"queries":3,"blocked":1,"hourly":[{"bucket_start":1787950800,"queries":
 legacy_device_bucket="$(printf 'device_bucket\taa:bb:cc:dd:ee:ff\t1787950800\t3\t1')"
 grep -F "$legacy_device_bucket" "$LEGACY_STATE" >/dev/null
 
+# When both hot tmpfs state and flash state exist, the newest valid snapshot
+# wins. This protects collector respawns after a flash checkpoint that completed
+# before the corresponding tmpfs snapshot was replaced.
+LATEST_STATE="$TMP/latest-state.tsv"
+LATEST_JSON="$TMP/latest-statistics.json"
+LATEST_PERSISTENT="$TMP/latest-persistent.tsv"
+cat >"$LATEST_STATE" <<'STATE'
+meta	1787950800	1787950800	1	0	0	0	2	1787950800
+bucket	1787950800	1	0
+STATE
+cat >"$LATEST_PERSISTENT" <<'STATE'
+meta	1787950800	1787954400	2	1	0	1787954400	2	1787954400
+bucket	1787950800	1	0
+bucket	1787954400	1	1
+STATE
+: >"$LOG"
+awk \
+	-v state_file="$LATEST_STATE" \
+	-v json_file="$LATEST_JSON" \
+	-v persistent_state_file="$LATEST_PERSISTENT" \
+	-v persistent_interval=3600 \
+	-v snapshot_interval=60 \
+	-v retention_hours=168 \
+	-v lease_file="$LEASES" \
+	-v fixed_now=1787958000 \
+	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	<"$LOG"
+grep -F '"totals":{"queries":2,"blocked":1}' "$LATEST_JSON" >/dev/null
+
+# A newer but corrupted persistent state must not replace a valid tmpfs state.
+CORRUPT_STATE="$TMP/corrupt-state.tsv"
+CORRUPT_JSON="$TMP/corrupt-statistics.json"
+CORRUPT_PERSISTENT="$TMP/corrupt-persistent.tsv"
+cat >"$CORRUPT_STATE" <<'STATE'
+meta	1787950800	1787954400	2	1	0	0	2	1787954400
+bucket	1787950800	1	0
+bucket	1787954400	1	1
+STATE
+cat >"$CORRUPT_PERSISTENT" <<'STATE'
+meta	1787950800	1787958000	999	999	0	1787958000	2	1787958000
+bucket	1787958000	1	1
+STATE
+: >"$LOG"
+awk \
+	-v state_file="$CORRUPT_STATE" \
+	-v json_file="$CORRUPT_JSON" \
+	-v persistent_state_file="$CORRUPT_PERSISTENT" \
+	-v persistent_interval=3600 \
+	-v snapshot_interval=60 \
+	-v retention_hours=168 \
+	-v lease_file="$LEASES" \
+	-v fixed_now=1787961600 \
+	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	<"$LOG"
+grep -F '"totals":{"queries":2,"blocked":1}' "$CORRUPT_JSON" >/dev/null
+
+# Persistent write failures must not break hot tmpfs statistics. They are
+# surfaced in statistics.json and retried with backoff rather than every
+# snapshot interval.
+FAIL_STATE="$TMP/fail-state.tsv"
+FAIL_JSON="$TMP/fail-statistics.json"
+FAIL_TARGET="$TMP/fail-persistent.tsv"
+FAIL_BIN="$TMP/fail-bin"
+REAL_MV="$(command -v mv)"
+mkdir "$FAIL_BIN"
+cat >"$FAIL_BIN/mv" <<EOF
+#!/bin/sh
+case "\${*}" in
+	*fail-persistent.tsv*) exit 1 ;;
+esac
+exec "$REAL_MV" "\${@}"
+EOF
+chmod +x "$FAIL_BIN/mv"
+: >"$LOG"
+PATH="$FAIL_BIN:$PATH" awk \
+	-v state_file="$FAIL_STATE" \
+	-v json_file="$FAIL_JSON" \
+	-v persistent_state_file="$FAIL_TARGET" \
+	-v persistent_interval=3600 \
+	-v persistent_retry_interval=300 \
+	-v snapshot_interval=60 \
+	-v retention_hours=168 \
+	-v lease_file="$LEASES" \
+	-v fixed_now=1787965200 \
+	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	<"$LOG"
+grep -F '"persistence_enabled":true' "$FAIL_JSON" >/dev/null
+grep -F '"persistence_healthy":false' "$FAIL_JSON" >/dev/null
+grep -F '"persistent_error_count":1' "$FAIL_JSON" >/dev/null
+grep -F '"persistent_last_error_at":1787965200' "$FAIL_JSON" >/dev/null
+[ -s "$FAIL_STATE" ]
+
+# The rpcd sanitizer must expose device hourly buckets at the device level and
+# must not recursively attach hourly arrays to hourly bucket objects.
+grep -F 'hourly: sanitize_hourly(item.hourly)' \
+	"$ROOT/files/usr/share/rpcd/ucode/safeshield/statistics.uc" >/dev/null
+[ "$(grep -Fc 'hourly: sanitize_hourly(item.hourly)' \
+	"$ROOT/files/usr/share/rpcd/ucode/safeshield/statistics.uc")" -eq 1 ]
+grep -F 'persistence_healthy: to_bool(data.persistence_healthy, false)' \
+	"$ROOT/files/usr/share/rpcd/ucode/safeshield/statistics.uc" >/dev/null
+
 printf '%s\n' 'statistics persistence tests: ok'

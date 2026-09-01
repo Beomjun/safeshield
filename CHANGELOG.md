@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.18-r3] - 2026-09-01
+
+### Fixed
+
+- Preserve per-device hourly statistics through the public statistics RPC.
+- Prefer the newest valid tmpfs or persistent statistics state when the collector restarts.
+- Reject persistent statistics state whose stored totals do not match its retained hourly buckets.
+- Expose persistent checkpoint health and back off retries after flash write failures.
+
 ## [0.3.18-r2] - 2026-09-01
 
 ### Added

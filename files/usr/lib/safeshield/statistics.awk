@@ -128,6 +128,43 @@ function register_device(key, mac, ip, hostname,    selected) {
 	return selected
 }
 
+function state_file_updated_at(path,    line, fields, count, meta_seen, meta_updated, expected_queries, expected_blocked, bucket_queries, bucket_blocked) {
+	if (path == "") {
+		return -1
+	}
+
+	meta_seen = 0
+	meta_updated = 0
+	expected_queries = 0
+	expected_blocked = 0
+	bucket_queries = 0
+	bucket_blocked = 0
+
+	while ((getline line < path) > 0) {
+		count = split(line, fields, "\t")
+		if (count >= 5 && fields[1] == "meta") {
+			meta_seen = 1
+			meta_updated = numeric(fields[3], 0)
+			expected_queries = numeric(fields[4], 0)
+			expected_blocked = numeric(fields[5], 0)
+		}
+		else if (count >= 4 && fields[1] == "bucket") {
+			bucket_queries += numeric(fields[3], 0)
+			bucket_blocked += numeric(fields[4], 0)
+		}
+	}
+	close(path)
+
+	if (!meta_seen) {
+		return -1
+	}
+	if (bucket_queries != expected_queries || bucket_blocked != expected_blocked) {
+		return -1
+	}
+
+	return meta_updated
+}
+
 function load_state_file(path,    line, fields, count, bucket, key, mac, ip, hostname, composite) {
 	if (path == "") {
 		return 0
@@ -151,6 +188,15 @@ function load_state_file(path,    line, fields, count, bucket, key, mac, ip, hos
 			}
 			if (count >= 9) {
 				loaded_session_started_at = numeric(fields[9], 0)
+			}
+			if (count >= 10) {
+				persistence_healthy = numeric(fields[10], 1) ? 1 : 0
+			}
+			if (count >= 11) {
+				persistent_error_count = numeric(fields[11], 0)
+			}
+			if (count >= 12) {
+				persistent_last_error_at = numeric(fields[12], 0)
 			}
 			loaded_state = 1
 		}
@@ -397,9 +443,10 @@ function save_state_file(path, now,    tmp, bucket, cutoff, key, composite, part
 	}
 
 	tmp = path ".tmp"
-	printf "meta\t%d\t%d\t%d\t%d\t%d\t%d\t2\t%d\n", \
+	printf "meta\t%d\t%d\t%d\t%d\t%d\t%d\t2\t%d\t%d\t%d\t%d\n", \
 		started_at, updated_at, total_queries, total_blocked, devices_truncated, \
-		persistent_updated_at, session_started_at > tmp
+		persistent_updated_at, session_started_at, persistence_healthy, \
+		persistent_error_count, persistent_last_error_at > tmp
 	cutoff = hour_start(now) - ((retention_hours - 1) * 3600)
 	for (bucket = cutoff; bucket <= hour_start(now); bucket += 3600) {
 		if ((bucket in queries) || (bucket in blocked)) {
@@ -429,6 +476,7 @@ function save_state_file(path, now,    tmp, bucket, cutoff, key, composite, part
 	close(tmp)
 
 	if (!replace_file(tmp, path)) {
+		system("rm -f " shell_quote(tmp))
 		return 0
 	}
 	return 1
@@ -451,16 +499,22 @@ function maybe_save_persistent(now, force,    previous_updated) {
 
 	previous_updated = persistent_updated_at
 	persistent_updated_at = now
+	persistence_healthy = 1
 	if (!save_state_file(persistent_state_file, now)) {
 		persistent_updated_at = previous_updated
+		persistence_healthy = 0
+		persistent_error_count++
+		persistent_last_error_at = now
+		next_persistent_at = now + persistent_retry_interval
 		return 0
 	}
 
+	persistence_healthy = 1
 	schedule_next_persistent(now)
 	return 1
 }
 
-function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma, key, identified, device_comma, composite, persistent, truncated) {
+function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma, key, identified, device_comma, composite, persistence_enabled, persistent, healthy, volatile_state, storage, truncated) {
 	tmp = json_file ".tmp"
 	current_hour = hour_start(now)
 	cutoff = current_hour - ((retention_hours - 1) * 3600)
@@ -469,11 +523,17 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 		first_hour = cutoff
 	}
 
-	persistent = (persistent_state_file != "") ? "true" : "false"
+	persistence_enabled = (persistent_state_file != "") ? "true" : "false"
+	persistent = (persistent_state_file != "" && persistence_healthy && persistent_updated_at > 0) ? "true" : "false"
+	healthy = (persistent_state_file != "" && persistence_healthy) ? "true" : "false"
+	volatile_state = (persistent_state_file != "") ? "false" : "true"
+	storage = (persistent_state_file != "") ? "tmpfs+flash" : "tmpfs"
 	truncated = devices_truncated ? "true" : "false"
 
 	printf "{\"schema\":{\"name\":\"safeshield.statistics\",\"version\":2}," > tmp
-	printf "\"volatile\":false,\"storage\":\"tmpfs+flash\",\"persistent\":%s,", persistent >> tmp
+	printf "\"volatile\":%s,\"storage\":\"%s\",\"persistent\":%s,", volatile_state, storage, persistent >> tmp
+	printf "\"persistence_enabled\":%s,\"persistence_healthy\":%s,", persistence_enabled, healthy >> tmp
+	printf "\"persistent_error_count\":%d,\"persistent_last_error_at\":%d,", persistent_error_count, persistent_last_error_at >> tmp
 	printf "\"persistent_updated_at\":%d,\"persistent_checkpoint_interval_s\":%d,", persistent_updated_at, persistent_interval >> tmp
 	printf "\"started_at\":%d,\"session_started_at\":%d,\"updated_at\":%d,", started_at, session_started_at, now >> tmp
 	printf "\"retention_hours\":%d,", retention_hours >> tmp
@@ -566,6 +626,7 @@ BEGIN {
 	retention_hours = numeric(retention_hours, 168)
 	lease_refresh_interval = numeric(lease_refresh_interval, 60)
 	persistent_interval = numeric(persistent_interval, 3600)
+	persistent_retry_interval = numeric(persistent_retry_interval, 300)
 	max_devices = numeric(max_devices, 128)
 	fixed_now = numeric(fixed_now, 0)
 	fixed_step = numeric(fixed_step, 0)
@@ -576,6 +637,9 @@ BEGIN {
 	loaded_state = 0
 	state_schema_version = 1
 	persistent_updated_at = 0
+	persistence_healthy = (persistent_state_file != "") ? 1 : 0
+	persistent_error_count = 0
+	persistent_last_error_at = 0
 
 	if (snapshot_interval < 1) {
 		snapshot_interval = 60
@@ -589,11 +653,22 @@ BEGIN {
 	if (persistent_interval < 60) {
 		persistent_interval = 3600
 	}
+	if (persistent_retry_interval < 60) {
+		persistent_retry_interval = 300
+	}
 	if (max_devices < 1) {
 		max_devices = 128
 	}
 
-	if (!load_state_file(state_file) && persistent_state_file != "") {
+	tmp_state_updated_at = state_file_updated_at(state_file)
+	persistent_state_updated_at = state_file_updated_at(persistent_state_file)
+	if (persistent_state_updated_at > tmp_state_updated_at) {
+		load_state_file(persistent_state_file)
+	}
+	else if (tmp_state_updated_at >= 0) {
+		load_state_file(state_file)
+	}
+	else if (persistent_state_updated_at >= 0) {
 		load_state_file(persistent_state_file)
 	}
 
