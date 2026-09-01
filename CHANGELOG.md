@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.18-r8] - 2026-09-01
+
+### Changed
+- Merge already sorted normalized Hub artifact shards with `sort -m -u` instead of concatenating and fully sorting them again during blocklist refresh.
+- Reuse the existing statistics totals pass to track each device's first and last retained hourly bucket, then serialize only that active range in `statistics.json`.
+
 ## [0.3.18-r7] - 2026-09-01
 
 ### Changed

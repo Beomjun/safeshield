@@ -706,6 +706,27 @@ ss_filter_domains_shadowed_by_ancestors() {
     ' "$shadow_file" "$input_file" >"$output_file"
 }
 
+ss_merge_sorted_api_sources() {
+	local action="$1"
+	local out="$2"
+	local f
+
+	set --
+	for f in "${SS_TMP_DIR}"/api.*."${action}".txt; do
+		[ -f "$f" ] || continue
+		set -- "$@" "$f"
+	done
+
+	if [ "$#" -eq 0 ]; then
+		: >"$out"
+		return 0
+	fi
+
+	# Every API shard is normalized with sort -u when downloaded, so merge the
+	# already-sorted streams instead of sorting their combined contents again.
+	sort -m -u "$@" >"$out"
+}
+
 ss_merge_lists() {
 	local final
 	local api_blocks="${SS_TMP_DIR}/api-blocks.domains"
@@ -719,25 +740,18 @@ ss_merge_lists() {
 	local final_blocks="${SS_TMP_DIR}/final-blocks.domains"
 	local final_size_kb
 	local valid_count
-	local f
 
 	final="$(ss_blocklist_tmp_path)" || return 1
 	: >"$final" || return 1
 	: >"$api_blocks" || return 1
 	: >"$api_allows" || return 1
 
-	for f in "${SS_TMP_DIR}"/api.*.block.txt; do
-		[ -f "$f" ] || continue
-		cat "$f"
-	done | sort -u >"$api_blocks" || {
+	ss_merge_sorted_api_sources block "$api_blocks" || {
 		rm -f "$final"
 		return 1
 	}
 
-	for f in "${SS_TMP_DIR}"/api.*.allow.txt; do
-		[ -f "$f" ] || continue
-		cat "$f"
-	done | sort -u >"$api_allows" || {
+	ss_merge_sorted_api_sources allow "$api_allows" || {
 		rm -f "$final"
 		return 1
 	}

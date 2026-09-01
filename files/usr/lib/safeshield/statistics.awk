@@ -633,12 +633,21 @@ function recompute_totals(    bucket, composite, parts, key, stale_count, i) {
 	for (key in device_seen) {
 		device_queries[key] = 0
 		device_blocked[key] = 0
+		delete device_first_bucket[key]
+		delete device_last_bucket[key]
 	}
 	for (composite in device_hour_queries) {
 		split(composite, parts, SUBSEP)
 		key = parts[1]
+		bucket = parts[2] + 0
 		device_queries[key] += device_hour_queries[composite] + 0
 		device_blocked[key] += device_hour_blocked[composite] + 0
+		if (!(key in device_first_bucket) || bucket < (device_first_bucket[key] + 0)) {
+			device_first_bucket[key] = bucket
+		}
+		if (!(key in device_last_bucket) || bucket > (device_last_bucket[key] + 0)) {
+			device_last_bucket[key] = bucket
+		}
 	}
 
 	stale_count = 0
@@ -981,7 +990,7 @@ function maybe_save_persistent(now, force,    previous_updated, ok) {
 	return 1
 }
 
-function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma, key, identified, device_comma, composite, persistence_enabled, persistent, healthy, volatile_state, storage, persistence_mode, truncated) {
+function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma, key, identified, device_comma, composite, device_first_hour, device_last_hour, persistence_enabled, persistent, healthy, volatile_state, storage, persistence_mode, truncated) {
 	tmp = json_file ".tmp"
 	current_hour = hour_start(now)
 	cutoff = current_hour - ((retention_hours - 1) * 3600)
@@ -1032,7 +1041,16 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 			device_blocked[key] + 0 >> tmp
 
 		device_comma = ""
-		for (bucket = first_hour; bucket <= current_hour; bucket += 3600) {
+		device_first_hour = device_first_bucket[key] + 0
+		device_last_hour = device_last_bucket[key] + 0
+		if (device_first_hour <= 0 || device_first_hour < first_hour) {
+			device_first_hour = first_hour
+		}
+		if (device_last_hour <= 0 || device_last_hour > current_hour) {
+			device_last_hour = current_hour
+		}
+
+		for (bucket = device_first_hour; bucket <= device_last_hour; bucket += 3600) {
 			composite = device_bucket_key(key, bucket)
 			if (!((composite in device_hour_queries) || (composite in device_hour_blocked))) {
 				continue
