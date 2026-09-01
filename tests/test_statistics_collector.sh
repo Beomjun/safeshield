@@ -31,6 +31,7 @@ EOF_CORE
 cat >"$TMP/bin/logread" <<'EOF_LOGREAD'
 #!/bin/sh
 printf '%s\n' "$$" >"$LOGREAD_PID_FILE"
+printf '%s\n' "$@" >"$LOGREAD_ARGS_FILE"
 while :; do
 	printf '%s\n' 'daemon.info dnsmasq[1]: query[A] example.com from 192.168.1.2'
 done
@@ -47,9 +48,10 @@ EOF_AWK
 chmod 755 "$TMP/bin/logread" "$TMP/bin/awk"
 
 LOGREAD_PID_FILE="$TMP/logread.pid"
+LOGREAD_ARGS_FILE="$TMP/logread.args"
 AWK_PID_FILE="$TMP/awk.pid"
 AWK_ARGS_FILE="$TMP/awk.args"
-export LOGREAD_PID_FILE AWK_PID_FILE AWK_ARGS_FILE
+export LOGREAD_PID_FILE LOGREAD_ARGS_FILE AWK_PID_FILE AWK_ARGS_FILE
 PATH="$TMP/bin:$PATH" \
 	SS_STATSD_FUNCTIONS_LIB="$TMP/functions.sh" \
 	SS_STATSD_CORE_LIB="$TMP/core.sh" \
@@ -70,6 +72,15 @@ while [ ! -s "$LOGREAD_PID_FILE" ] || [ ! -s "$AWK_PID_FILE" ]; do
 done
 LOGREAD_PID="$(cat "$LOGREAD_PID_FILE")"
 AWK_PID="$(cat "$AWK_PID_FILE")"
+expected_logread_args='-f
+-l
+0
+-e
+dnsmasq'
+[ "$(cat "$LOGREAD_ARGS_FILE")" = "$expected_logread_args" ] || {
+	echo 'statistics collector did not filter logread to dnsmasq messages' >&2
+	exit 1
+}
 grep -Fx 'snapshot_interval=300' "$AWK_ARGS_FILE" >/dev/null
 grep -Fx 'identity_cache_ttl=60' "$AWK_ARGS_FILE" >/dev/null
 

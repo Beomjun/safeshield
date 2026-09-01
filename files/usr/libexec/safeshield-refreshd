@@ -17,6 +17,7 @@ readonly SS_REFRESHD_LOCK='/var/lock/safeshield-refreshd.lock'
 readonly SS_REFRESHD_LOCK_FD=308
 
 ss_should_terminate=0
+ss_sleep_pid=''
 
 refreshd_lock() {
 	mkdir -p "${SS_REFRESHD_LOCK%/*}" || return 1
@@ -31,19 +32,25 @@ refreshd_unlock() {
 
 handle_term() {
 	ss_should_terminate=1
+	if [ -n "$ss_sleep_pid" ]; then
+		kill "$ss_sleep_pid" 2>/dev/null || true
+	fi
 }
 
 sleep_seconds() {
-	local n="$1"
+	local seconds="$1"
+	local rc=0
 
-	while [ "$n" -gt 0 ]; do
-		[ "$ss_should_terminate" -eq 1 ] && return 1
-		sleep 1
-		[ "$ss_should_terminate" -eq 1 ] && return 1
-		n=$((n - 1))
-	done
+	[ "$ss_should_terminate" -eq 1 ] && return 1
+	[ "$seconds" -gt 0 ] 2>/dev/null || return 0
 
-	return 0
+	sleep "$seconds" &
+	ss_sleep_pid=$!
+	wait "$ss_sleep_pid" 2>/dev/null || rc=$?
+	ss_sleep_pid=''
+
+	[ "$ss_should_terminate" -eq 1 ] && return 1
+	[ "$rc" -eq 0 ]
 }
 
 wait_for_wan_if_needed() {

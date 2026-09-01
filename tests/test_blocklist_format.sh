@@ -108,4 +108,28 @@ address=/legacy.example/::
 DATA
 check_blocklist_rule_present 'legacy.example' || fail 'legacy rule verification compatibility failed'
 
+cat >"$SS_BLOCKLIST_FILE" <<'DATA'
+address=/sample-one.example/#
+address=/sample-two.example/#
+address=/sample-three.example/#
+DATA
+sampled="$(find_test_domains 2)"
+expected_sample='sample-one.example
+sample-two.example'
+[ "$sampled" = "$expected_sample" ] || fail 'blocklist sampling did not stop at the requested limit'
+
+RULE_CHECK_COUNT=0
+DNS_CHECK_COUNT=0
+check_blocklist_rule_present() {
+	RULE_CHECK_COUNT=$((RULE_CHECK_COUNT + 1))
+	return 1
+}
+check_domain_blocked() {
+	DNS_CHECK_COUNT=$((DNS_CHECK_COUNT + 1))
+	return 0
+}
+check_blocklist_applied_multi_with_stats 2 2 || fail 'sampled blocklist runtime verification failed'
+[ "$RULE_CHECK_COUNT" -eq 0 ] || fail 'sampled domains were redundantly rescanned in the blocklist file'
+[ "$DNS_CHECK_COUNT" -eq 2 ] || fail 'sampled domains were not checked through dnsmasq runtime resolution'
+
 printf '%s\n' 'blocklist format tests: ok'

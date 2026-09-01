@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.18-r7] - 2026-09-01
+
+### Changed
+- Filter the live statistics log stream in `logread` so only dnsmasq messages enter the FIFO and AWK collector.
+- Replace refreshd's one-second polling sleep loop with a single interruptible sleep child that is cancelled immediately on TERM or INT.
+- Stop blocklist test-domain sampling as soon as the requested limit is reached and skip redundant blocklist rule scans for domains already sampled from the installed blocklist.
+
 ## [0.3.18-r6] - 2026-09-01
 
 ### Changed

@@ -101,7 +101,7 @@ stats_run_collector() {
 		return 1
 	}
 
-	logread -f -l 0 >"$stats_fifo" &
+	logread -f -l 0 -e dnsmasq >"$stats_fifo" &
 	stats_logread_pid=$!
 
 	awk \

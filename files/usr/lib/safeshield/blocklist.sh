@@ -865,14 +865,19 @@ find_test_domains() {
 	local limit="${1:-5}"
 
 	[ -f "${SS_BLOCKLIST_FILE}" ] || return 1
+	[ "$limit" -gt 0 ] 2>/dev/null || return 0
 
-	awk -F'/' '
+	awk -F'/' -v limit="$limit" '
         $1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::") {
             if (!seen[$2]++) {
                 print $2
+                found++
+                if (found >= limit) {
+                    exit
+                }
             }
         }
-    ' "${SS_BLOCKLIST_FILE}" | head -n "$limit"
+    ' "${SS_BLOCKLIST_FILE}"
 }
 
 check_blocklist_rule_present() {
@@ -884,6 +889,7 @@ check_blocklist_rule_present() {
 	awk -F'/' -v d="$domain" '
         $1 == "address=" && $2 == d && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::") {
             found = 1
+            exit
         }
         END {
             exit(found ? 0 : 1)
@@ -903,7 +909,11 @@ check_domain_blocked() {
 check_blocklist_applied_for_domain() {
 	local domain="$1"
 
-	check_blocklist_rule_present "$domain" || return 1
+	local rule_already_sampled="${2:-0}"
+
+	if [ "$rule_already_sampled" != "1" ]; then
+		check_blocklist_rule_present "$domain" || return 1
+	fi
 	check_domain_blocked "$domain" || return 1
 }
 
@@ -933,7 +943,7 @@ check_blocklist_applied_multi_with_stats() {
 			domains="$domain"
 		fi
 
-		if check_blocklist_applied_for_domain "$domain"; then
+		if check_blocklist_applied_for_domain "$domain" 1; then
 			success=$((success + 1))
 		fi
 	done <<EOF
