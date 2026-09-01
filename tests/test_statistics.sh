@@ -13,6 +13,9 @@ export SS_DNSMASQ_DIR SS_STATISTICS_DNSMASQ_CONF
 # shellcheck disable=SC1090
 . "$ROOT/files/usr/lib/safeshield/statistics.sh"
 
+[ "$(ss_statistics_effective_snapshot_interval 60)" = "60" ]
+[ "$(ss_statistics_effective_snapshot_interval 120)" = "120" ]
+
 changed="$(ss_statistics_configure_dnsmasq 1)"
 [ "$changed" = "1" ]
 grep -Fx 'log-queries=extra' "$SS_STATISTICS_DNSMASQ_CONF" >/dev/null
@@ -20,6 +23,18 @@ grep -Fx 'log-async=25' "$SS_STATISTICS_DNSMASQ_CONF" >/dev/null
 
 changed="$(ss_statistics_configure_dnsmasq 1)"
 [ "$changed" = "0" ]
+
+SS_IDENTITY_PROFILE='gl_mt300n_v2'
+export SS_IDENTITY_PROFILE
+[ "$(ss_statistics_effective_snapshot_interval 60)" = "300" ]
+[ "$(ss_statistics_effective_snapshot_interval 120)" = "120" ]
+changed="$(ss_statistics_configure_dnsmasq 1)"
+[ "$changed" = "1" ]
+grep -Fx 'log-async=50' "$SS_STATISTICS_DNSMASQ_CONF" >/dev/null
+changed="$(ss_statistics_configure_dnsmasq 1)"
+[ "$changed" = "0" ]
+SS_IDENTITY_PROFILE=''
+export SS_IDENTITY_PROFILE
 
 changed="$(ss_statistics_configure_dnsmasq 0)"
 [ "$changed" = "1" ]
@@ -172,6 +187,34 @@ if grep -F '"id":"ip:192.168.1.50"' "$ARP_JSON" >/dev/null; then
 	echo 'ARP identity must merge the temporary IP device into its MAC identity' >&2
 	exit 1
 fi
+# An idle collector should serialize its tmpfs state only once at startup. The
+# END block must still run the persistent flush path without rewriting state/json.
+DIRTY_STATE="$TMP/dirty-state.tsv"
+DIRTY_JSON="$TMP/dirty-statistics.json"
+DIRTY_LOG="$TMP/dirty.log"
+MV_COUNT_FILE="$TMP/mv-count"
+FAKE_BIN="$TMP/fake-bin"
+REAL_MV="$(command -v mv)"
+mkdir -p "$FAKE_BIN"
+cat >"$FAKE_BIN/mv" <<'EOF_MV'
+#!/bin/sh
+printf '%s\n' '1' >>"$MV_COUNT_FILE"
+exec "$REAL_MV" "$@"
+EOF_MV
+chmod 755 "$FAKE_BIN/mv"
+: >"$DIRTY_LOG"
+: >"$MV_COUNT_FILE"
+PATH="$FAKE_BIN:$PATH" MV_COUNT_FILE="$MV_COUNT_FILE" REAL_MV="$REAL_MV" \
+	awk \
+	-v state_file="$DIRTY_STATE" \
+	-v json_file="$DIRTY_JSON" \
+	-v snapshot_interval=60 \
+	-v retention_hours=168 \
+	-v fixed_now=1787954400 \
+	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	<"$DIRTY_LOG"
+[ "$(wc -l <"$MV_COUNT_FILE" | tr -d '[:space:]')" -eq 2 ]
+
 if grep -F "$(printf 'device_bucket\tip:192.168.1.50\t')" "$ARP_STATE" >/dev/null; then
 	echo 'ARP identity migration must not leave orphan IP hourly buckets' >&2
 	exit 1

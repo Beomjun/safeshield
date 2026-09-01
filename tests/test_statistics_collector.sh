@@ -20,6 +20,8 @@ ss_statistics_retention_hours=168
 SS_STATISTICS_DIR='$TMP/statistics'
 SS_STATISTICS_STATE_FILE='$TMP/statistics/state.tsv'
 SS_STATISTICS_JSON_FILE='$TMP/statistics/statistics.json'
+SS_IDENTITY_PROFILE='gl_mt300n_v2'
+. '$ROOT/files/usr/lib/safeshield/statistics.sh'
 ss_load_config() { return 0; }
 command_exists() { command -v "\$1" >/dev/null 2>&1; }
 log_info() { :; }
@@ -37,6 +39,7 @@ EOF_LOGREAD
 cat >"$TMP/bin/awk" <<'EOF_AWK'
 #!/bin/sh
 printf '%s\n' "$$" >"$AWK_PID_FILE"
+printf '%s\n' "$@" >"$AWK_ARGS_FILE"
 while IFS= read -r line; do
 	: "$line"
 done
@@ -45,7 +48,8 @@ chmod 755 "$TMP/bin/logread" "$TMP/bin/awk"
 
 LOGREAD_PID_FILE="$TMP/logread.pid"
 AWK_PID_FILE="$TMP/awk.pid"
-export LOGREAD_PID_FILE AWK_PID_FILE
+AWK_ARGS_FILE="$TMP/awk.args"
+export LOGREAD_PID_FILE AWK_PID_FILE AWK_ARGS_FILE
 PATH="$TMP/bin:$PATH" \
 	SS_STATSD_FUNCTIONS_LIB="$TMP/functions.sh" \
 	SS_STATSD_CORE_LIB="$TMP/core.sh" \
@@ -66,6 +70,8 @@ while [ ! -s "$LOGREAD_PID_FILE" ] || [ ! -s "$AWK_PID_FILE" ]; do
 done
 LOGREAD_PID="$(cat "$LOGREAD_PID_FILE")"
 AWK_PID="$(cat "$AWK_PID_FILE")"
+grep -Fx 'snapshot_interval=300' "$AWK_ARGS_FILE" >/dev/null
+grep -Fx 'identity_cache_ttl=60' "$AWK_ARGS_FILE" >/dev/null
 
 kill -TERM "$STATSD_PID"
 wait "$STATSD_PID" 2>/dev/null || true

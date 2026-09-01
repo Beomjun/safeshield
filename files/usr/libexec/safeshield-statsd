@@ -115,6 +115,7 @@ stats_run_collector() {
 		-v retention_hours="${retention_hours}" \
 		-v lease_file="${lease_file}" \
 		-v lease_refresh_interval=60 \
+		-v identity_cache_ttl=60 \
 		-v max_devices=128 \
 		-f "$SS_STATSD_AWK_PROGRAM" \
 		<"$stats_fifo" &
@@ -133,7 +134,7 @@ stats_run_collector() {
 }
 
 main() {
-	local snapshot_interval retention_hours lease_file configured_lease_file rc=0
+	local snapshot_interval configured_snapshot_interval retention_hours lease_file configured_lease_file rc=0
 
 	ss_load_config || return 1
 	[ "${ss_enabled}" = "1" ] || return 0
@@ -159,7 +160,8 @@ main() {
 	trap 'stats_terminate 130' INT
 	trap 'stats_terminate 143' TERM
 
-	snapshot_interval="${ss_statistics_snapshot_interval_s}"
+	configured_snapshot_interval="${ss_statistics_snapshot_interval_s}"
+	snapshot_interval="$(ss_statistics_effective_snapshot_interval "$configured_snapshot_interval")"
 	retention_hours="${ss_statistics_retention_hours}"
 	lease_file="${SS_STATSD_DHCP_LEASE_FILE:-/tmp/dhcp.leases}"
 	if [ -z "${SS_STATSD_DHCP_LEASE_FILE:-}" ] && command_exists uci; then
@@ -167,7 +169,7 @@ main() {
 		[ -n "$configured_lease_file" ] && lease_file="$configured_lease_file"
 	fi
 
-	log_info "Starting statistics collector (snapshot=${snapshot_interval}s retention=${retention_hours}h journal=${SS_STATSD_PERSISTENT_INTERVAL_S}s compact=${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S}s)"
+	log_info "Starting statistics collector (snapshot=${snapshot_interval}s configured_snapshot=${configured_snapshot_interval}s retention=${retention_hours}h journal=${SS_STATSD_PERSISTENT_INTERVAL_S}s compact=${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S}s)"
 
 	stats_run_collector "$snapshot_interval" "$retention_hours" "$lease_file" || rc=$?
 	return "$rc"

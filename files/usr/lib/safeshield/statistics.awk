@@ -424,11 +424,28 @@ function migrate_legacy_device_totals(now,    key, bucket, composite) {
 	}
 }
 
+function clear_identity_cache(    ip) {
+	for (ip in identity_key_cache) {
+		delete identity_key_cache[ip]
+		delete identity_cache_expires[ip]
+	}
+}
+
+function cache_identity_key(ip, key, now) {
+	if (ip == "" || key == "") {
+		return key
+	}
+	identity_key_cache[ip] = key
+	identity_cache_expires[ip] = now + identity_cache_ttl
+	return key
+}
+
 function refresh_leases(now, force,    line, fields, count, mac, ip, hostname) {
 	if (!force && last_lease_refresh > 0 && (now - last_lease_refresh) < lease_refresh_interval) {
 		return
 	}
 
+	clear_identity_cache()
 	for (ip in lease_mac) {
 		delete lease_mac[ip]
 		delete lease_hostname[ip]
@@ -557,10 +574,19 @@ function reconcile_ip_devices(    ip, ip_key, mac, hostname) {
 	}
 }
 
-function device_key_for_ip(ip, now,    mac, hostname, ip_key) {
+function device_key_for_ip(ip, now,    cached_key, mac, hostname, ip_key, selected) {
 	if (ip == "" || ip == "127.0.0.1" || ip == "::1") {
 		return ""
 	}
+
+	if ((ip in identity_key_cache) && (identity_cache_expires[ip] + 0) > now) {
+		cached_key = identity_key_cache[ip]
+		if (cached_key != "") {
+			return cached_key
+		}
+	}
+	delete identity_key_cache[ip]
+	delete identity_cache_expires[ip]
 
 	refresh_leases(now, 0)
 	ip_key = "ip:" ip
@@ -568,10 +594,13 @@ function device_key_for_ip(ip, now,    mac, hostname, ip_key) {
 	if (ip in lease_mac) {
 		mac = lease_mac[ip]
 		hostname = lease_hostname[ip]
-		return migrate_ip_device(ip_key, mac, ip, hostname)
+		selected = migrate_ip_device(ip_key, mac, ip, hostname)
+	}
+	else {
+		selected = register_device(ip_key, "", ip, "")
 	}
 
-	return register_device(ip_key, "", ip, "")
+	return cache_identity_key(ip, selected, now)
 }
 
 function record_device(ip, query_delta, blocked_delta, now,    key, bucket, composite) {
@@ -1021,18 +1050,38 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 	return replace_file(tmp, json_file)
 }
 
-function save_snapshot(now, force_persistent) {
-	prune_buckets(now)
-	recompute_totals()
-	updated_at = now
-	maybe_save_persistent(now, force_persistent)
+function persistence_metadata_signature() {
+	return persistent_updated_at SUBSEP persistence_healthy SUBSEP persistent_error_count SUBSEP \
+		persistent_last_error_at SUBSEP persistent_compacted_at SUBSEP last_journal_completed_bucket
+}
 
+function save_snapshot(now, force_persistent, force_snapshot,    serialize_snapshot, previous_persistence_metadata) {
+	serialize_snapshot = snapshot_dirty || force_snapshot
+	if (serialize_snapshot) {
+		prune_buckets(now)
+		recompute_totals()
+	}
+	if (serialize_snapshot || force_persistent) {
+		updated_at = now
+	}
+
+	previous_persistence_metadata = persistence_metadata_signature()
+	maybe_save_persistent(now, force_persistent)
+	if (persistence_metadata_signature() != previous_persistence_metadata) {
+		serialize_snapshot = 1
+	}
+
+	if (!serialize_snapshot) {
+		last_snapshot = now
+		return 1
+	}
 	if (!save_state_file(state_file, now)) {
 		return 0
 	}
 	if (!save_json(now)) {
 		return 0
 	}
+	snapshot_dirty = 0
 	last_snapshot = now
 	return 1
 }
@@ -1040,6 +1089,7 @@ function save_snapshot(now, force_persistent) {
 function record_event(query_delta, blocked_delta, client_ip,    now, bucket) {
 	now = current_time()
 	bucket = hour_start(now)
+	snapshot_dirty = 1
 	queries[bucket] += 0
 	blocked[bucket] += 0
 
@@ -1054,7 +1104,7 @@ function record_event(query_delta, blocked_delta, client_ip,    now, bucket) {
 
 	event_index++
 	if ((now - last_snapshot) >= snapshot_interval) {
-		save_snapshot(now, 0)
+		save_snapshot(now, 0, 0)
 	}
 }
 
@@ -1068,6 +1118,7 @@ BEGIN {
 	snapshot_interval = numeric(snapshot_interval, 60)
 	retention_hours = numeric(retention_hours, 168)
 	lease_refresh_interval = numeric(lease_refresh_interval, 60)
+	identity_cache_ttl = numeric(identity_cache_ttl, 60)
 	persistent_interval = numeric(persistent_interval, 3600)
 	persistent_retry_interval = numeric(persistent_retry_interval, 300)
 	persistent_compact_interval = numeric(persistent_compact_interval, 604800)
@@ -1075,6 +1126,7 @@ BEGIN {
 	fixed_now = numeric(fixed_now, 0)
 	fixed_step = numeric(fixed_step, 0)
 	event_index = 0
+	snapshot_dirty = 0
 	device_count = 0
 	devices_truncated = 0
 	last_lease_refresh = 0
@@ -1097,6 +1149,12 @@ BEGIN {
 	}
 	if (lease_refresh_interval < 1) {
 		lease_refresh_interval = 60
+	}
+	if (identity_cache_ttl < 1) {
+		identity_cache_ttl = 60
+	}
+	if (identity_cache_ttl > lease_refresh_interval) {
+		identity_cache_ttl = lease_refresh_interval
 	}
 	if (persistent_interval < 60) {
 		persistent_interval = 3600
@@ -1145,8 +1203,6 @@ BEGIN {
 	session_started_at = current_time()
 	migrate_legacy_device_totals(current_time())
 	refresh_leases(current_time(), 1)
-	prune_buckets(current_time())
-	recompute_totals()
 	last_snapshot = updated_at
 	if (last_snapshot <= 0) {
 		last_snapshot = session_started_at
@@ -1159,7 +1215,7 @@ BEGIN {
 	}
 	schedule_next_persistent(current_time())
 	schedule_next_compaction(current_time())
-	save_snapshot(current_time(), 0)
+	save_snapshot(current_time(), 0, 1)
 }
 
 /dnsmasq\[[0-9]+\]:/ {
@@ -1175,5 +1231,5 @@ BEGIN {
 }
 
 END {
-	save_snapshot(current_time(), 1)
+	save_snapshot(current_time(), 1, 0)
 }

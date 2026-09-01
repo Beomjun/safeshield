@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.18-r6] - 2026-09-01
+
+### Changed
+- Increase the dnsmasq asynchronous statistics log queue from 25 to 50 lines on GL-MT300N-V2 while keeping the existing 25-line queue on other device profiles.
+- Use a 300-second hot statistics snapshot interval on GL-MT300N-V2 when the configured interval is the standard 60-second default, while preserving non-default configured intervals.
+- Cache resolved DNS client IP-to-device identities for up to 60 seconds, bounded by the DHCP/ARP lease refresh interval.
+- Skip redundant tmpfs state and JSON serialization when no statistics state changed, while still forcing pending persistent journal data to flush on graceful collector shutdown and serializing persistence health changes when a flush updates them.
+
+### Fixed
+- Reduce per-query AWK identity processing and periodic snapshot CPU bursts that can cause DNS latency on resource-constrained routers such as GL-MT300N-V2.
+
 ## [0.3.18-r5] - 2026-09-01
 
 ### Added

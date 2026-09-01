@@ -3,8 +3,50 @@
 # Paths are defined by core.sh before these helpers are called.
 # shellcheck disable=SC2154
 
+ss_statistics_profile_code() {
+	local board=""
+	local profile=""
+
+	if command -v ss_identity_board_name >/dev/null 2>&1 && command -v ss_identity_profile_code >/dev/null 2>&1; then
+		board="$(ss_identity_board_name 2>/dev/null || true)"
+		if [ -n "$board" ]; then
+			profile="$(ss_identity_profile_code "$board" 2>/dev/null || true)"
+		fi
+	fi
+
+	case "$profile" in
+		'' | unknown)
+			[ -n "${SS_IDENTITY_PROFILE:-}" ] && profile="${SS_IDENTITY_PROFILE}"
+			;;
+	esac
+	[ -n "$profile" ] || profile="unknown"
+	printf '%s\n' "$profile"
+}
+
+ss_statistics_log_async_lines() {
+	case "$(ss_statistics_profile_code)" in
+		gl_mt300n_v2)
+			printf '%s\n' '50'
+			;;
+		*)
+			printf '%s\n' '25'
+			;;
+	esac
+}
+
+ss_statistics_effective_snapshot_interval() {
+	local configured="${1:-60}"
+
+	if [ "$configured" = "60" ] && [ "$(ss_statistics_profile_code)" = "gl_mt300n_v2" ]; then
+		printf '%s\n' '300'
+		return 0
+	fi
+	printf '%s\n' "$configured"
+}
+
 ss_statistics_configure_dnsmasq() {
 	local enabled="${1:-0}"
+	local log_async_lines=""
 	local tmp="${SS_STATISTICS_DNSMASQ_CONF}.tmp.$$"
 
 	mkdir -p "${SS_DNSMASQ_DIR}" || return 1
@@ -19,11 +61,15 @@ ss_statistics_configure_dnsmasq() {
 		return 0
 	fi
 
-	cat >"$tmp" <<'CONFIG'
-# Managed by SafeShield. Do not edit.
-log-queries=extra
-log-async=25
-CONFIG
+	log_async_lines="$(ss_statistics_log_async_lines)"
+	{
+		printf '%s\n' '# Managed by SafeShield. Do not edit.'
+		printf '%s\n' 'log-queries=extra'
+		printf 'log-async=%s\n' "$log_async_lines"
+	} >"$tmp" || {
+		rm -f "$tmp"
+		return 1
+	}
 
 	if [ -f "${SS_STATISTICS_DNSMASQ_CONF}" ] && cmp -s "$tmp" "${SS_STATISTICS_DNSMASQ_CONF}"; then
 		rm -f "$tmp"
