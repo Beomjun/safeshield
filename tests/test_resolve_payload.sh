@@ -61,9 +61,12 @@ printf '%s\n' '0.3.18-r1' >"$SS_VERSION_FILE"
 payload="$TMP_DIR/resolve-request.json"
 ss_write_resolve_payload "$payload" || fail 'resolve payload generation failed'
 
-grep -Fq '"safeshield_version": "0.3.18-r1"' "$payload" || {
-	fail 'resolve payload does not include the installed SafeShield version'
+grep -Fq '    "safeshield_version": "0.3.18-r1"' "$payload" || {
+	fail 'resolve payload device does not include the installed SafeShield version'
 }
+if grep -Eq '^  "safeshield_version"' "$payload"; then
+	fail 'resolve payload unexpectedly includes a top-level SafeShield version'
+fi
 grep -Fq '"license_key": "test-license"' "$payload" || {
 	fail 'resolve payload license key changed unexpectedly'
 }
@@ -75,8 +78,11 @@ SS_VERSION_FILE="$TMP_DIR/missing-version"
 export SS_VERSION_FILE
 fallback_payload="$TMP_DIR/resolve-request-fallback.json"
 ss_write_resolve_payload "$fallback_payload" || fail 'fallback resolve payload generation failed'
-grep -Fq '"safeshield_version": "unknown"' "$fallback_payload" || {
-	fail 'missing installed version does not fall back to unknown'
+grep -Fq '    "safeshield_version": "unknown"' "$fallback_payload" || {
+	fail 'missing installed version does not fall back to unknown in device metadata'
 }
+if grep -Eq '^  "safeshield_version"' "$fallback_payload"; then
+	fail 'fallback resolve payload unexpectedly includes a top-level SafeShield version'
+fi
 
 printf '%s\n' 'resolve payload tests: ok'

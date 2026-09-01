@@ -204,7 +204,6 @@ ss_write_resolve_payload() {
 
 	cat >"$out" <<__SAFESHIELD_JSON__
 {
-  "safeshield_version": $(ss_json_value "$safeshield_version"),
   "license_key": $(ss_json_value "$ss_license_key"),
   "device": {
     "physical_fingerprint": $(ss_json_value "$physical_fingerprint"),
@@ -217,7 +216,8 @@ ss_write_resolve_payload() {
     "vendor": $(ss_json_value "$vendor"),
     "model": $(ss_json_value "$model"),
     "arch": $(ss_json_value "$arch"),
-    "memory_mb": ${memory}
+    "memory_mb": ${memory},
+    "safeshield_version": $(ss_json_value "$safeshield_version")
   }
 }
 __SAFESHIELD_JSON__
