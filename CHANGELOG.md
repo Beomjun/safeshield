@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.18-r4] - 2026-09-01
+
+### Fixed
+
+- Reconcile temporary `ip:<address>` statistics identities with MAC-based device identities once the client MAC address becomes available.
+- Merge existing cumulative and hourly query/block counters into the resolved MAC identity without losing historical statistics.
+- Remove stale IP-based device records and hourly buckets after a successful identity migration.
+- Fall back to `/proc/net/arp` for client MAC resolution when DHCP lease data is unavailable.
+- Make device hourly bucket migration safe across different AWK implementations by avoiding in-place associative array mutation during iteration.
+
 ## [0.3.18-r3] - 2026-09-01
 
 ### Fixed

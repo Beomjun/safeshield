@@ -53,6 +53,20 @@ function decode_state_field(value) {
 	return (value == "*") ? "" : value
 }
 
+function normalize_mac(value,    parts, count, i, mac) {
+	mac = tolower(value)
+	count = split(mac, parts, ":")
+	if (count != 6 || mac == "00:00:00:00:00:00") {
+		return ""
+	}
+	for (i = 1; i <= count; i++) {
+		if (parts[i] !~ /^[0-9a-f][0-9a-f]$/) {
+			return ""
+		}
+	}
+	return mac
+}
+
 function remove_device_metadata(key) {
 	if (!(key in device_seen)) {
 		return
@@ -273,7 +287,7 @@ function refresh_leases(now, force,    line, fields, count, mac, ip, hostname) {
 			continue
 		}
 
-		mac = tolower(fields[2])
+		mac = normalize_mac(fields[2])
 		ip = fields[3]
 		hostname = fields[4]
 		if (mac == "" || ip == "") {
@@ -284,28 +298,68 @@ function refresh_leases(now, force,    line, fields, count, mac, ip, hostname) {
 		lease_hostname[ip] = (hostname == "*") ? "" : hostname
 	}
 	close(lease_file)
+
+	# DHCP leases are not guaranteed to contain every active client. Static-IP
+	# clients and lease-file update windows can otherwise recreate an ip:*
+	# identity after the device has already been identified by MAC. Use the
+	# kernel ARP table as the current IPv4 identity fallback. A DHCP lease stays
+	# authoritative when both sources contain the same IP because it also carries
+	# the hostname used by the public statistics API.
+	while ((getline line < arp_file) > 0) {
+		count = split(line, fields, /[[:space:]]+/)
+		if (count < 4) {
+			continue
+		}
+
+		ip = fields[1]
+		mac = normalize_mac(fields[4])
+		if (ip == "" || mac == "") {
+			continue
+		}
+
+		if (!(ip in lease_mac)) {
+			lease_mac[ip] = mac
+			lease_hostname[ip] = ""
+		}
+	}
+	close(arp_file)
+
 	last_lease_refresh = now
+	reconcile_ip_devices()
 }
 
-function move_device_hours(from_key, to_key,    composite, parts, bucket, target) {
+function move_device_hours(from_key, to_key,    composite, parts, bucket, target, count, i, move_keys) {
 	if (from_key == to_key) {
 		return
 	}
 
+	# Do not mutate the associative array while iterating over it. Some awk
+	# implementations may skip entries when keys are added/deleted during the
+	# same for-in traversal, leaving orphan ip:* hourly buckets behind.
+	count = 0
 	for (composite in device_hour_queries) {
 		split(composite, parts, SUBSEP)
-		if (parts[1] != from_key) {
-			continue
+		if (parts[1] == from_key) {
+			move_keys[++count] = composite
 		}
+	}
 
+	for (i = 1; i <= count; i++) {
+		composite = move_keys[i]
+		split(composite, parts, SUBSEP)
 		bucket = parts[2] + 0
 		target = device_bucket_key(to_key, bucket)
 		device_hour_queries[target] += device_hour_queries[composite] + 0
 		device_hour_blocked[target] += device_hour_blocked[composite] + 0
 		delete device_hour_queries[composite]
 		delete device_hour_blocked[composite]
+		delete move_keys[i]
 	}
-	device_has_hourly[to_key] = 1
+
+	delete device_has_hourly[from_key]
+	if (count > 0) {
+		device_has_hourly[to_key] = 1
+	}
 }
 
 function migrate_ip_device(ip_key, mac_key, ip, hostname,    selected) {
@@ -324,6 +378,22 @@ function migrate_ip_device(ip_key, mac_key, ip, hostname,    selected) {
 
 	move_device_hours(ip_key, selected)
 	return selected
+}
+
+function reconcile_ip_devices(    ip, ip_key, mac, hostname) {
+	for (ip in lease_mac) {
+		ip_key = "ip:" ip
+		if (!(ip_key in device_seen)) {
+			continue
+		}
+
+		mac = lease_mac[ip]
+		if (mac == "") {
+			continue
+		}
+		hostname = lease_hostname[ip]
+		migrate_ip_device(ip_key, mac, ip, hostname)
+	}
 }
 
 function device_key_for_ip(ip, now,    mac, hostname, ip_key) {
@@ -622,6 +692,7 @@ BEGIN {
 	json_file = (json_file != "") ? json_file : "/tmp/safeshield/statistics/statistics.json"
 	persistent_state_file = (persistent_state_file != "") ? persistent_state_file : ""
 	lease_file = (lease_file != "") ? lease_file : "/tmp/dhcp.leases"
+	arp_file = (arp_file != "") ? arp_file : "/proc/net/arp"
 	snapshot_interval = numeric(snapshot_interval, 60)
 	retention_hours = numeric(retention_hours, 168)
 	lease_refresh_interval = numeric(lease_refresh_interval, 60)

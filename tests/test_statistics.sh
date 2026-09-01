@@ -129,4 +129,52 @@ if grep -F '"id":"ip:192.168.1.40"' "$MIGRATE_JSON" >/dev/null; then
 	exit 1
 fi
 
+# A persisted temporary IP identity must also reconcile through the kernel ARP
+# table when the DHCP lease is unavailable. This covers static-IP clients and
+# lease-file update gaps, and verifies that multiple hourly buckets are moved
+# without leaving an orphan ip:* identity behind.
+ARP_STATE="$TMP/arp-state.tsv"
+ARP_JSON="$TMP/arp-statistics.json"
+ARP_LEASES="$TMP/arp-dhcp.leases"
+ARP_TABLE="$TMP/arp-table"
+ARP_LOG="$TMP/arp.log"
+: >"$ARP_LEASES"
+: >"$ARP_LOG"
+cat >"$ARP_TABLE" <<'ARP'
+IP address       HW type     Flags       HW address            Mask     Device
+192.168.1.50     0x1         0x2         de:ad:be:ef:00:02     *        br-lan
+ARP
+cat >"$ARP_STATE" <<'STATE'
+meta	1787950800	1787954400	6	2	0	0	2	1787954400
+bucket	1787950800	3	1
+bucket	1787954400	3	1
+device	ip:192.168.1.50	*	192.168.1.50	*	4	1
+device	de:ad:be:ef:00:02	de:ad:be:ef:00:02	192.168.1.50	workstation	2	1
+device_bucket	ip:192.168.1.50	1787950800	2	1
+device_bucket	ip:192.168.1.50	1787954400	2	0
+device_bucket	de:ad:be:ef:00:02	1787950800	1	0
+device_bucket	de:ad:be:ef:00:02	1787954400	1	1
+STATE
+awk \
+	-v state_file="$ARP_STATE" \
+	-v json_file="$ARP_JSON" \
+	-v lease_file="$ARP_LEASES" \
+	-v arp_file="$ARP_TABLE" \
+	-v snapshot_interval=60 \
+	-v retention_hours=168 \
+	-v fixed_now=1787954400 \
+	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	<"$ARP_LOG"
+grep -F '"id":"de:ad:be:ef:00:02","mac":"de:ad:be:ef:00:02","ip":"192.168.1.50","hostname":"workstation","identified":true,"queries":6,"blocked":2' "$ARP_JSON" >/dev/null
+grep -F '{"bucket_start":1787950800,"queries":3,"blocked":1}' "$ARP_JSON" >/dev/null
+grep -F '{"bucket_start":1787954400,"queries":3,"blocked":1}' "$ARP_JSON" >/dev/null
+if grep -F '"id":"ip:192.168.1.50"' "$ARP_JSON" >/dev/null; then
+	echo 'ARP identity must merge the temporary IP device into its MAC identity' >&2
+	exit 1
+fi
+if grep -F "$(printf 'device_bucket\tip:192.168.1.50\t')" "$ARP_STATE" >/dev/null; then
+	echo 'ARP identity migration must not leave orphan IP hourly buckets' >&2
+	exit 1
+fi
+
 printf '%s\n' 'statistics tests: ok'
