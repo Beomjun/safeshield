@@ -51,6 +51,7 @@ PATH="$TMP/bin:$PATH" \
 	SS_STATSD_CORE_LIB="$TMP/core.sh" \
 	SS_STATSD_AWK_PROGRAM="$ROOT/files/usr/lib/safeshield/statistics.awk" \
 	SS_STATSD_PERSISTENT_STATE_FILE="$TMP/statistics-state.tsv" \
+	SS_STATSD_PERSISTENT_JOURNAL_FILE="$TMP/statistics-journal.tsv" \
 	sh "$ROOT/files/usr/libexec/safeshield-statsd" &
 STATSD_PID=$!
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.3.18-r5] - 2026-09-01
+
+### Added
+
+- Add journal-based persistence for SafeShield statistics to reduce flash write amplification on low-end devices.
+- Persist completed hourly global and per-device statistics by appending compact journal transactions instead of rewriting the full retained statistics state every hour.
+- Add transactional `begin`/`commit` markers so incomplete journal writes caused by power loss are ignored during recovery.
+- Add periodic journal compaction that merges retained journal data into the persistent base snapshot.
+- Preserve statistics journal data across sysupgrade.
+- Expose journal persistence mode and compaction metadata through the statistics API.
+
+### Changed
+
+- Keep the 60-second statistics snapshot in tmpfs while limiting routine flash writes to hourly journal updates.
+- Change full persistent state rewrites from hourly checkpoints to periodic compaction, with a default compaction interval of 7 days.
+- Restore statistics at startup by loading the persistent base snapshot and replaying committed journal transactions.
+- Persist IP-to-MAC device identity reconciliation through journal records without losing cumulative or hourly statistics.
+- Use absolute hourly bucket updates in the journal so replay remains idempotent after restarts or interrupted compaction.
+
+### Fixed
+
+- Avoid the periodic full-state flash writes that can cause noticeable latency on resource-constrained devices such as the GL-MT300N-V2.
+- Ignore incomplete journal transactions after an unexpected shutdown or power loss.
+- Keep in-memory statistics operational when a journal persistence write fails, while reporting persistence health through the statistics API.
+
 ## [0.3.18-r4] - 2026-09-01
 
 ### Fixed

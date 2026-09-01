@@ -2,4 +2,5 @@
 /etc/safeshield/allowlist
 /etc/safeshield/blocklist
 /etc/safeshield/statistics-state.tsv
+/etc/safeshield/statistics-journal.tsv
 /etc/config/safeshield

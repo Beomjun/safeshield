@@ -212,6 +212,12 @@ function load_state_file(path,    line, fields, count, bucket, key, mac, ip, hos
 			if (count >= 12) {
 				persistent_last_error_at = numeric(fields[12], 0)
 			}
+			if (count >= 13) {
+				persistent_compacted_at = numeric(fields[13], 0)
+			}
+			if (count >= 14) {
+				last_journal_completed_bucket = numeric(fields[14], 0)
+			}
 			loaded_state = 1
 		}
 		else if (count >= 4 && fields[1] == "bucket") {
@@ -247,6 +253,153 @@ function load_state_file(path,    line, fields, count, bucket, key, mac, ip, hos
 		}
 	}
 	close(path)
+	return loaded_state
+}
+
+function journal_file_updated_at(path,    line, fields, count, line_no, current_txn, current_updated, last_commit_line, latest_updated) {
+	if (path == "") {
+		return -1
+	}
+
+	line_no = 0
+	current_txn = ""
+	current_updated = 0
+	last_commit_line = 0
+	latest_updated = -1
+	while ((getline line < path) > 0) {
+		line_no++
+		count = split(line, fields, "\t")
+		if (count >= 11 && fields[1] == "begin") {
+			current_txn = fields[2]
+			current_updated = numeric(fields[4], 0)
+		}
+		else if (count >= 2 && fields[1] == "commit" && current_txn != "" && fields[2] == current_txn) {
+			last_commit_line = line_no
+			latest_updated = current_updated
+			current_txn = ""
+			current_updated = 0
+		}
+	}
+	close(path)
+
+	return (last_commit_line > 0) ? latest_updated : -1
+}
+
+function load_journal_file(path,    line, fields, count, line_no, current_txn, current_start, active_end, txn_updated, txn_started, txn_truncated, txn_session_started, txn_completed, txn_healthy, txn_error_count, txn_last_error, key, mac, ip, hostname, bucket, composite, committed_end) {
+	if (path == "") {
+		return 0
+	}
+
+	# First pass records only complete transaction ranges. A power loss can leave
+	# a partial append at the tail (or before a later retry); those records must
+	# never be replayed unless their matching commit marker is present.
+	line_no = 0
+	current_txn = ""
+	current_start = 0
+	while ((getline line < path) > 0) {
+		line_no++
+		count = split(line, fields, "\t")
+		if (count >= 11 && fields[1] == "begin") {
+			current_txn = fields[2]
+			current_start = line_no
+		}
+		else if (count >= 2 && fields[1] == "commit" && current_txn != "" && fields[2] == current_txn) {
+			committed_end[current_start] = line_no
+			current_txn = ""
+			current_start = 0
+		}
+	}
+	close(path)
+
+	line_no = 0
+	current_txn = ""
+	active_end = 0
+	while ((getline line < path) > 0) {
+		line_no++
+		count = split(line, fields, "\t")
+		if (count >= 11 && fields[1] == "begin") {
+			current_txn = fields[2]
+			active_end = committed_end[line_no] + 0
+			if (active_end <= 0) {
+				current_txn = ""
+				continue
+			}
+			txn_updated = numeric(fields[4], 0)
+			txn_started = numeric(fields[5], 0)
+			txn_truncated = numeric(fields[6], 0) ? 1 : 0
+			txn_session_started = numeric(fields[7], 0)
+			txn_completed = numeric(fields[8], 0)
+			txn_healthy = numeric(fields[9], 1) ? 1 : 0
+			txn_error_count = numeric(fields[10], 0)
+			txn_last_error = numeric(fields[11], 0)
+			continue
+		}
+		if (current_txn == "" || line_no > active_end) {
+			continue
+		}
+		if (count >= 4 && fields[1] == "bucket") {
+			bucket = numeric(fields[2], 0)
+			if (bucket > 0) {
+				queries[bucket] = numeric(fields[3], 0)
+				blocked[bucket] = numeric(fields[4], 0)
+			}
+			continue
+		}
+		if (count >= 5 && fields[1] == "device") {
+			key = decode_state_field(fields[2])
+			mac = decode_state_field(fields[3])
+			ip = decode_state_field(fields[4])
+			hostname = decode_state_field(fields[5])
+			register_device(key, mac, ip, hostname)
+			continue
+		}
+		if (count >= 5 && fields[1] == "device_bucket") {
+			key = decode_state_field(fields[2])
+			bucket = numeric(fields[3], 0)
+			if (key != "" && bucket > 0) {
+				key = register_device(key, "", "", "")
+				if (key != "") {
+					composite = device_bucket_key(key, bucket)
+					device_hour_queries[composite] = numeric(fields[4], 0)
+					device_hour_blocked[composite] = numeric(fields[5], 0)
+					device_has_hourly[key] = 1
+				}
+			}
+			continue
+		}
+		if (count >= 2 && fields[1] == "delete_device") {
+			key = decode_state_field(fields[2])
+			if (key != "") {
+				journal_replaying = 1
+				remove_device(key)
+				journal_replaying = 0
+			}
+			continue
+		}
+		if (count >= 2 && fields[1] == "commit" && fields[2] == current_txn && line_no == active_end) {
+			if (txn_started > 0) {
+				started_at = txn_started
+			}
+			devices_truncated = txn_truncated
+			if (txn_session_started > 0) {
+				loaded_session_started_at = txn_session_started
+			}
+			if (txn_completed > last_journal_completed_bucket) {
+				last_journal_completed_bucket = txn_completed
+			}
+			persistent_updated_at = txn_updated
+			persistence_healthy = txn_healthy
+			persistent_error_count = txn_error_count
+			persistent_last_error_at = txn_last_error
+			updated_at = txn_updated
+			loaded_state = 1
+			state_schema_version = 3
+			current_txn = ""
+			active_end = 0
+		}
+	}
+	close(path)
+	journal_replaying = 0
 	return loaded_state
 }
 
@@ -369,7 +522,12 @@ function migrate_ip_device(ip_key, mac_key, ip, hostname,    selected) {
 
 	# Replacing an existing temporary IP identity must not consume an extra
 	# device slot. Remove only its metadata first, keep the hourly buckets, then
-	# move those buckets after the stable MAC identity has been registered.
+	# move those buckets after the stable MAC identity has been registered. The
+	# journal tombstone prevents an older persisted ip:* identity from reappearing
+	# after reboot before DHCP/ARP reconciliation runs again.
+	if (!journal_replaying) {
+		journal_deleted_device[ip_key] = 1
+	}
 	remove_device_metadata(ip_key)
 	selected = register_device(mac_key, mac_key, ip, hostname)
 	if (selected == "") {
@@ -377,6 +535,9 @@ function migrate_ip_device(ip_key, mac_key, ip, hostname,    selected) {
 	}
 
 	move_device_hours(ip_key, selected)
+	if (!journal_replaying) {
+		journal_full_device[selected] = 1
+	}
 	return selected
 }
 
@@ -513,10 +674,11 @@ function save_state_file(path, now,    tmp, bucket, cutoff, key, composite, part
 	}
 
 	tmp = path ".tmp"
-	printf "meta\t%d\t%d\t%d\t%d\t%d\t%d\t2\t%d\t%d\t%d\t%d\n", \
+	printf "meta\t%d\t%d\t%d\t%d\t%d\t%d\t3\t%d\t%d\t%d\t%d\t%d\t%d\n", \
 		started_at, updated_at, total_queries, total_blocked, devices_truncated, \
 		persistent_updated_at, session_started_at, persistence_healthy, \
-		persistent_error_count, persistent_last_error_at > tmp
+		persistent_error_count, persistent_last_error_at, persistent_compacted_at, \
+		last_journal_completed_bucket > tmp
 	cutoff = hour_start(now) - ((retention_hours - 1) * 3600)
 	for (bucket = cutoff; bucket <= hour_start(now); bucket += 3600) {
 		if ((bucket in queries) || (bucket in blocked)) {
@@ -552,6 +714,19 @@ function save_state_file(path, now,    tmp, bucket, cutoff, key, composite, part
 	return 1
 }
 
+function append_file(source, target,    rc) {
+	rc = system("cat " shell_quote(source) " >> " shell_quote(target))
+	return rc == 0
+}
+
+function clear_journal_file(path,    rc) {
+	if (path == "") {
+		return 1
+	}
+	rc = system(": > " shell_quote(path))
+	return rc == 0
+}
+
 function schedule_next_persistent(now) {
 	next_persistent_at = hour_start(now) + persistent_interval
 	while (next_persistent_at <= now) {
@@ -559,14 +734,168 @@ function schedule_next_persistent(now) {
 	}
 }
 
-function maybe_save_persistent(now, force,    previous_updated) {
-	if (persistent_state_file == "") {
+function schedule_next_compaction(now) {
+	if (persistent_compact_interval <= 0) {
+		next_compact_at = 0
+		return
+	}
+	if (persistent_compacted_at <= 0) {
+		persistent_compacted_at = now
+	}
+	next_compact_at = persistent_compacted_at + persistent_compact_interval
+	while (next_compact_at <= now) {
+		next_compact_at += persistent_compact_interval
+	}
+}
+
+function journal_has_pending_deletes(    key) {
+	for (key in journal_deleted_device) {
 		return 1
 	}
-	if (!force && now < next_persistent_at) {
+	return 0
+}
+
+function journal_has_pending_full_devices(    key) {
+	for (key in journal_full_device) {
+		return 1
+	}
+	return 0
+}
+
+function clear_journal_pending(    key) {
+	for (key in journal_deleted_device) {
+		delete journal_deleted_device[key]
+	}
+	for (key in journal_full_device) {
+		delete journal_full_device[key]
+	}
+}
+
+function write_journal_transaction(now, first_bucket, last_bucket, completed_through,    tmp, txn_id, bucket, key, composite, wrote_device, device_first, device_last, cutoff) {
+	if (persistent_journal_file == "") {
+		return 0
+	}
+	if (first_bucket > last_bucket && !journal_has_pending_deletes() && !journal_has_pending_full_devices()) {
 		return 1
 	}
 
+	tmp = state_file ".journal.tmp"
+	txn_id = sprintf("%d-%d-%d", now, event_index, ++journal_txn_seq)
+	printf "begin\t%s\t1\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", \
+		txn_id, now, started_at, devices_truncated, session_started_at, \
+		completed_through, persistence_healthy, persistent_error_count, \
+		persistent_last_error_at > tmp
+
+	for (key in journal_deleted_device) {
+		printf "delete_device\t%s\n", normalize_state_field(key) >> tmp
+	}
+
+	for (bucket = first_bucket; bucket <= last_bucket; bucket += 3600) {
+		if ((bucket in queries) || (bucket in blocked)) {
+			printf "bucket\t%d\t%d\t%d\n", bucket, queries[bucket] + 0, blocked[bucket] + 0 >> tmp
+		}
+	}
+
+	# Journal writes normally cover one completed hour. Iterate at most
+	# max_devices for that hour instead of scanning every retained device-hour
+	# entry (up to max_devices * retention_hours) on low-end routers. Identity
+	# migration is the exception: its target MAC receives the full retained
+	# history in the same transaction as the old ip:* tombstone.
+	cutoff = hour_start(now) - ((retention_hours - 1) * 3600)
+	for (key in device_seen) {
+		wrote_device = 0
+		device_first = first_bucket
+		device_last = last_bucket
+		if (key in journal_full_device) {
+			device_first = cutoff
+			device_last = hour_start(now)
+		}
+		for (bucket = device_first; bucket <= device_last; bucket += 3600) {
+			composite = device_bucket_key(key, bucket)
+			if (!((composite in device_hour_queries) || (composite in device_hour_blocked))) {
+				continue
+			}
+			if (!wrote_device) {
+				printf "device\t%s\t%s\t%s\t%s\n", \
+					normalize_state_field(key), \
+					normalize_state_field(device_mac[key]), \
+					normalize_state_field(device_ip[key]), \
+					normalize_state_field(device_hostname[key]) >> tmp
+				wrote_device = 1
+			}
+			printf "device_bucket\t%s\t%d\t%d\t%d\n", \
+				normalize_state_field(key), bucket, \
+				device_hour_queries[composite] + 0, \
+				device_hour_blocked[composite] + 0 >> tmp
+		}
+	}
+	printf "commit\t%s\n", txn_id >> tmp
+	close(tmp)
+
+	if (!append_file(tmp, persistent_journal_file)) {
+		system("rm -f " shell_quote(tmp))
+		return 0
+	}
+	system("rm -f " shell_quote(tmp))
+	clear_journal_pending()
+	return 1
+}
+
+function flush_completed_journal(now,    current_bucket, target_bucket, cutoff, first_bucket) {
+	current_bucket = hour_start(now)
+	target_bucket = current_bucket - 3600
+	cutoff = current_bucket - ((retention_hours - 1) * 3600)
+	first_bucket = last_journal_completed_bucket + 3600
+	if (last_journal_completed_bucket <= 0 || first_bucket < cutoff) {
+		first_bucket = cutoff
+	}
+
+	if (target_bucket < first_bucket && !journal_has_pending_deletes() && !journal_has_pending_full_devices()) {
+		return 1
+	}
+	if (!write_journal_transaction(now, first_bucket, target_bucket, target_bucket)) {
+		return 0
+	}
+	if (target_bucket >= first_bucket) {
+		last_journal_completed_bucket = target_bucket
+	}
+	return 1
+}
+
+function flush_current_journal(now,    current_bucket) {
+	current_bucket = hour_start(now)
+	return write_journal_transaction(now, current_bucket, current_bucket, last_journal_completed_bucket)
+}
+
+function maybe_compact_persistent(now,    previous_compacted) {
+	if (persistent_state_file == "" || persistent_journal_file == "" || persistent_compact_interval <= 0) {
+		return 1
+	}
+	if (next_compact_at <= 0 || now < next_compact_at) {
+		return 1
+	}
+
+	previous_compacted = persistent_compacted_at
+	persistent_compacted_at = now
+	if (!save_state_file(persistent_state_file, now)) {
+		persistent_compacted_at = previous_compacted
+		persistent_error_count++
+		persistent_last_error_at = now
+		next_compact_at = now + ((persistent_retry_interval > 3600) ? persistent_retry_interval : 3600)
+		return 0
+	}
+
+	# The base snapshot is already complete. If journal truncation is interrupted,
+	# replaying the retained absolute upserts is still safe and cannot double-count.
+	if (!clear_journal_file(persistent_journal_file)) {
+		persistent_error_count++
+		persistent_last_error_at = now
+	}
+	schedule_next_compaction(now)
+	return 1
+}
+
+function save_persistent_snapshot(now,    previous_updated) {
 	previous_updated = persistent_updated_at
 	persistent_updated_at = now
 	persistence_healthy = 1
@@ -578,13 +907,52 @@ function maybe_save_persistent(now, force,    previous_updated) {
 		next_persistent_at = now + persistent_retry_interval
 		return 0
 	}
-
 	persistence_healthy = 1
+	return 1
+}
+
+function maybe_save_persistent(now, force,    previous_updated, ok) {
+	if (persistent_state_file == "" && persistent_journal_file == "") {
+		return 1
+	}
+	if (!force && now < next_persistent_at) {
+		return 1
+	}
+
+	# Compatibility fallback for callers that do not configure a journal.
+	if (persistent_journal_file == "") {
+		if (!save_persistent_snapshot(now)) {
+			return 0
+		}
+		schedule_next_persistent(now)
+		return 1
+	}
+
+	previous_updated = persistent_updated_at
+	persistence_healthy = 1
+	ok = flush_completed_journal(now)
+	if (ok && force) {
+		ok = flush_current_journal(now)
+	}
+	if (!ok) {
+		persistent_updated_at = previous_updated
+		persistence_healthy = 0
+		persistent_error_count++
+		persistent_last_error_at = now
+		next_persistent_at = now + persistent_retry_interval
+		return 0
+	}
+
+	persistent_updated_at = now
+	persistence_healthy = 1
+	if (!force) {
+		maybe_compact_persistent(now)
+	}
 	schedule_next_persistent(now)
 	return 1
 }
 
-function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma, key, identified, device_comma, composite, persistence_enabled, persistent, healthy, volatile_state, storage, truncated) {
+function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma, key, identified, device_comma, composite, persistence_enabled, persistent, healthy, volatile_state, storage, persistence_mode, truncated) {
 	tmp = json_file ".tmp"
 	current_hour = hour_start(now)
 	cutoff = current_hour - ((retention_hours - 1) * 3600)
@@ -593,18 +961,21 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 		first_hour = cutoff
 	}
 
-	persistence_enabled = (persistent_state_file != "") ? "true" : "false"
-	persistent = (persistent_state_file != "" && persistence_healthy && persistent_updated_at > 0) ? "true" : "false"
-	healthy = (persistent_state_file != "" && persistence_healthy) ? "true" : "false"
-	volatile_state = (persistent_state_file != "") ? "false" : "true"
-	storage = (persistent_state_file != "") ? "tmpfs+flash" : "tmpfs"
+	persistence_enabled = (persistent_state_file != "" || persistent_journal_file != "") ? "true" : "false"
+	persistent = (persistence_enabled == "true" && persistence_healthy && persistent_updated_at > 0) ? "true" : "false"
+	healthy = (persistence_enabled == "true" && persistence_healthy) ? "true" : "false"
+	volatile_state = (persistence_enabled == "true") ? "false" : "true"
+	storage = (persistence_enabled == "true") ? "tmpfs+flash" : "tmpfs"
+	persistence_mode = (persistent_journal_file != "") ? "journal" : ((persistent_state_file != "") ? "snapshot" : "none")
 	truncated = devices_truncated ? "true" : "false"
 
 	printf "{\"schema\":{\"name\":\"safeshield.statistics\",\"version\":2}," > tmp
 	printf "\"volatile\":%s,\"storage\":\"%s\",\"persistent\":%s,", volatile_state, storage, persistent >> tmp
 	printf "\"persistence_enabled\":%s,\"persistence_healthy\":%s,", persistence_enabled, healthy >> tmp
+	printf "\"persistence_mode\":\"%s\",", persistence_mode >> tmp
 	printf "\"persistent_error_count\":%d,\"persistent_last_error_at\":%d,", persistent_error_count, persistent_last_error_at >> tmp
 	printf "\"persistent_updated_at\":%d,\"persistent_checkpoint_interval_s\":%d,", persistent_updated_at, persistent_interval >> tmp
+	printf "\"persistent_compacted_at\":%d,\"persistent_compact_interval_s\":%d,", persistent_compacted_at, persistent_compact_interval >> tmp
 	printf "\"started_at\":%d,\"session_started_at\":%d,\"updated_at\":%d,", started_at, session_started_at, now >> tmp
 	printf "\"retention_hours\":%d,", retention_hours >> tmp
 	printf "\"device_limit\":%d,\"devices_truncated\":%s,", max_devices, truncated >> tmp
@@ -691,6 +1062,7 @@ BEGIN {
 	state_file = (state_file != "") ? state_file : "/tmp/safeshield/statistics/state.tsv"
 	json_file = (json_file != "") ? json_file : "/tmp/safeshield/statistics/statistics.json"
 	persistent_state_file = (persistent_state_file != "") ? persistent_state_file : ""
+	persistent_journal_file = (persistent_journal_file != "") ? persistent_journal_file : ""
 	lease_file = (lease_file != "") ? lease_file : "/tmp/dhcp.leases"
 	arp_file = (arp_file != "") ? arp_file : "/proc/net/arp"
 	snapshot_interval = numeric(snapshot_interval, 60)
@@ -698,6 +1070,7 @@ BEGIN {
 	lease_refresh_interval = numeric(lease_refresh_interval, 60)
 	persistent_interval = numeric(persistent_interval, 3600)
 	persistent_retry_interval = numeric(persistent_retry_interval, 300)
+	persistent_compact_interval = numeric(persistent_compact_interval, 604800)
 	max_devices = numeric(max_devices, 128)
 	fixed_now = numeric(fixed_now, 0)
 	fixed_step = numeric(fixed_step, 0)
@@ -708,7 +1081,11 @@ BEGIN {
 	loaded_state = 0
 	state_schema_version = 1
 	persistent_updated_at = 0
-	persistence_healthy = (persistent_state_file != "") ? 1 : 0
+	persistent_compacted_at = 0
+	last_journal_completed_bucket = 0
+	journal_txn_seq = 0
+	journal_replaying = 0
+	persistence_healthy = (persistent_state_file != "" || persistent_journal_file != "") ? 1 : 0
 	persistent_error_count = 0
 	persistent_last_error_at = 0
 
@@ -727,20 +1104,39 @@ BEGIN {
 	if (persistent_retry_interval < 60) {
 		persistent_retry_interval = 300
 	}
+	if (persistent_compact_interval < 3600) {
+		persistent_compact_interval = 604800
+	}
 	if (max_devices < 1) {
 		max_devices = 128
 	}
 
 	tmp_state_updated_at = state_file_updated_at(state_file)
 	persistent_state_updated_at = state_file_updated_at(persistent_state_file)
-	if (persistent_state_updated_at > tmp_state_updated_at) {
-		load_state_file(persistent_state_file)
+	persistent_journal_updated_at = journal_file_updated_at(persistent_journal_file)
+	persistent_combined_updated_at = persistent_state_updated_at
+	if (persistent_journal_updated_at > persistent_combined_updated_at) {
+		persistent_combined_updated_at = persistent_journal_updated_at
+	}
+
+	if (persistent_combined_updated_at > tmp_state_updated_at) {
+		if (persistent_state_updated_at >= 0) {
+			load_state_file(persistent_state_file)
+		}
+		if (persistent_journal_updated_at >= 0) {
+			load_journal_file(persistent_journal_file)
+		}
 	}
 	else if (tmp_state_updated_at >= 0) {
 		load_state_file(state_file)
 	}
-	else if (persistent_state_updated_at >= 0) {
-		load_state_file(persistent_state_file)
+	else if (persistent_combined_updated_at >= 0) {
+		if (persistent_state_updated_at >= 0) {
+			load_state_file(persistent_state_file)
+		}
+		if (persistent_journal_updated_at >= 0) {
+			load_journal_file(persistent_journal_file)
+		}
 	}
 
 	if (started_at <= 0) {
@@ -755,7 +1151,14 @@ BEGIN {
 	if (last_snapshot <= 0) {
 		last_snapshot = session_started_at
 	}
+	if (last_journal_completed_bucket <= 0 && persistent_updated_at > 0) {
+		last_journal_completed_bucket = hour_start(persistent_updated_at) - 3600
+	}
+	if (persistent_compacted_at <= 0) {
+		persistent_compacted_at = (persistent_updated_at > 0) ? persistent_updated_at : current_time()
+	}
 	schedule_next_persistent(current_time())
+	schedule_next_compaction(current_time())
 	save_snapshot(current_time(), 0)
 }
 

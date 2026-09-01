@@ -11,7 +11,9 @@ SS_STATSD_FUNCTIONS_LIB="${SS_STATSD_FUNCTIONS_LIB:-/lib/functions.sh}"
 SS_STATSD_CORE_LIB="${SS_STATSD_CORE_LIB:-/usr/lib/safeshield/core.sh}"
 SS_STATSD_AWK_PROGRAM="${SS_STATSD_AWK_PROGRAM:-/usr/lib/safeshield/statistics.awk}"
 SS_STATSD_PERSISTENT_STATE_FILE="${SS_STATSD_PERSISTENT_STATE_FILE:-/etc/safeshield/statistics-state.tsv}"
+SS_STATSD_PERSISTENT_JOURNAL_FILE="${SS_STATSD_PERSISTENT_JOURNAL_FILE:-/etc/safeshield/statistics-journal.tsv}"
 SS_STATSD_PERSISTENT_INTERVAL_S="${SS_STATSD_PERSISTENT_INTERVAL_S:-3600}"
+SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S="${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S:-604800}"
 
 # shellcheck disable=SC1090
 . "$SS_STATSD_FUNCTIONS_LIB"
@@ -106,7 +108,9 @@ stats_run_collector() {
 		-v state_file="${SS_STATISTICS_STATE_FILE}" \
 		-v json_file="${SS_STATISTICS_JSON_FILE}" \
 		-v persistent_state_file="${SS_STATSD_PERSISTENT_STATE_FILE}" \
+		-v persistent_journal_file="${SS_STATSD_PERSISTENT_JOURNAL_FILE}" \
 		-v persistent_interval="${SS_STATSD_PERSISTENT_INTERVAL_S}" \
+		-v persistent_compact_interval="${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S}" \
 		-v snapshot_interval="${snapshot_interval}" \
 		-v retention_hours="${retention_hours}" \
 		-v lease_file="${lease_file}" \
@@ -144,7 +148,10 @@ main() {
 		return 1
 	}
 
-	mkdir -p "${SS_STATISTICS_DIR}" "${SS_STATSD_PERSISTENT_STATE_FILE%/*}" || return 1
+	mkdir -p \
+		"${SS_STATISTICS_DIR}" \
+		"${SS_STATSD_PERSISTENT_STATE_FILE%/*}" \
+		"${SS_STATSD_PERSISTENT_JOURNAL_FILE%/*}" || return 1
 	stats_acquire_lock || return 0
 
 	trap 'stats_cleanup' EXIT
@@ -160,7 +167,7 @@ main() {
 		[ -n "$configured_lease_file" ] && lease_file="$configured_lease_file"
 	fi
 
-	log_info "Starting statistics collector (snapshot=${snapshot_interval}s retention=${retention_hours}h persistent=${SS_STATSD_PERSISTENT_INTERVAL_S}s)"
+	log_info "Starting statistics collector (snapshot=${snapshot_interval}s retention=${retention_hours}h journal=${SS_STATSD_PERSISTENT_INTERVAL_S}s compact=${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S}s)"
 
 	stats_run_collector "$snapshot_interval" "$retention_hours" "$lease_file" || rc=$?
 	return "$rc"
