@@ -56,8 +56,8 @@ PATH="$TMP/bin:$PATH" \
 	SS_STATSD_FUNCTIONS_LIB="$TMP/functions.sh" \
 	SS_STATSD_CORE_LIB="$TMP/core.sh" \
 	SS_STATSD_AWK_PROGRAM="$ROOT/files/usr/lib/safeshield/statistics.awk" \
-	SS_STATSD_PERSISTENT_STATE_FILE="$TMP/statistics-state.tsv" \
-	SS_STATSD_PERSISTENT_JOURNAL_FILE="$TMP/statistics-journal.tsv" \
+	SS_STATSD_PERSISTENT_STATE_FILE="$TMP/flash/statistics-state.tsv" \
+	SS_STATSD_PERSISTENT_JOURNAL_FILE="$TMP/flash/statistics-journal.tsv" \
 	sh "$ROOT/files/usr/libexec/safeshield-statsd" &
 STATSD_PID=$!
 
@@ -83,6 +83,12 @@ dnsmasq'
 }
 grep -Fx 'snapshot_interval=300' "$AWK_ARGS_FILE" >/dev/null
 grep -Fx 'identity_cache_ttl=60' "$AWK_ARGS_FILE" >/dev/null
+grep -Fx 'persistent_state_file=' "$AWK_ARGS_FILE" >/dev/null
+grep -Fx 'persistent_journal_file=' "$AWK_ARGS_FILE" >/dev/null
+[ ! -e "$TMP/flash" ] || {
+	echo 'GL-MT300N-V2 collector must not create flash persistence paths' >&2
+	exit 1
+}
 
 kill -TERM "$STATSD_PID"
 wait "$STATSD_PID" 2>/dev/null || true

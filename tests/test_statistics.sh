@@ -15,6 +15,7 @@ export SS_DNSMASQ_DIR SS_STATISTICS_DNSMASQ_CONF
 
 [ "$(ss_statistics_effective_snapshot_interval 60)" = "60" ]
 [ "$(ss_statistics_effective_snapshot_interval 120)" = "120" ]
+ss_statistics_persistence_enabled
 
 changed="$(ss_statistics_configure_dnsmasq 1)"
 [ "$changed" = "1" ]
@@ -28,6 +29,10 @@ SS_IDENTITY_PROFILE='gl_mt300n_v2'
 export SS_IDENTITY_PROFILE
 [ "$(ss_statistics_effective_snapshot_interval 60)" = "300" ]
 [ "$(ss_statistics_effective_snapshot_interval 120)" = "120" ]
+if ss_statistics_persistence_enabled; then
+	echo 'GL-MT300N-V2 statistics persistence must be disabled' >&2
+	exit 1
+fi
 changed="$(ss_statistics_configure_dnsmasq 1)"
 [ "$changed" = "1" ]
 grep -Fx 'log-async=50' "$SS_STATISTICS_DNSMASQ_CONF" >/dev/null
@@ -35,6 +40,7 @@ changed="$(ss_statistics_configure_dnsmasq 1)"
 [ "$changed" = "0" ]
 SS_IDENTITY_PROFILE=''
 export SS_IDENTITY_PROFILE
+ss_statistics_persistence_enabled
 
 changed="$(ss_statistics_configure_dnsmasq 0)"
 [ "$changed" = "1" ]

@@ -44,6 +44,17 @@ ss_statistics_effective_snapshot_interval() {
 	printf '%s\n' "$configured"
 }
 
+ss_statistics_persistence_enabled() {
+	case "$(ss_statistics_profile_code)" in
+		gl_mt300n_v2)
+			return 1
+			;;
+		*)
+			return 0
+			;;
+	esac
+}
+
 ss_statistics_configure_dnsmasq() {
 	local enabled="${1:-0}"
 	local log_async_lines=""

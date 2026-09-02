@@ -36,7 +36,7 @@ stats_cleanup() {
 	trap - EXIT HUP INT TERM
 
 	# Stop the FIFO writer first. awk then receives EOF and runs its END block,
-	# which performs the graceful persistent statistics checkpoint.
+	# which performs the final snapshot and persistent checkpoint when enabled.
 	if stats_process_running "$stats_logread_pid"; then
 		kill "$stats_logread_pid" 2>/dev/null || true
 	fi
@@ -92,6 +92,8 @@ stats_run_collector() {
 	local snapshot_interval="$1"
 	local retention_hours="$2"
 	local lease_file="$3"
+	local persistent_state_file="$4"
+	local persistent_journal_file="$5"
 	local rc=0
 
 	stats_fifo="${SS_STATISTICS_DIR}/events.$$"
@@ -107,8 +109,8 @@ stats_run_collector() {
 	awk \
 		-v state_file="${SS_STATISTICS_STATE_FILE}" \
 		-v json_file="${SS_STATISTICS_JSON_FILE}" \
-		-v persistent_state_file="${SS_STATSD_PERSISTENT_STATE_FILE}" \
-		-v persistent_journal_file="${SS_STATSD_PERSISTENT_JOURNAL_FILE}" \
+		-v persistent_state_file="${persistent_state_file}" \
+		-v persistent_journal_file="${persistent_journal_file}" \
 		-v persistent_interval="${SS_STATSD_PERSISTENT_INTERVAL_S}" \
 		-v persistent_compact_interval="${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S}" \
 		-v snapshot_interval="${snapshot_interval}" \
@@ -134,7 +136,8 @@ stats_run_collector() {
 }
 
 main() {
-	local snapshot_interval configured_snapshot_interval retention_hours lease_file configured_lease_file rc=0
+	local snapshot_interval configured_snapshot_interval retention_hours lease_file configured_lease_file
+	local persistent_state_file persistent_journal_file persistence_mode rc=0
 
 	ss_load_config || return 1
 	[ "${ss_enabled}" = "1" ] || return 0
@@ -149,10 +152,22 @@ main() {
 		return 1
 	}
 
-	mkdir -p \
-		"${SS_STATISTICS_DIR}" \
-		"${SS_STATSD_PERSISTENT_STATE_FILE%/*}" \
-		"${SS_STATSD_PERSISTENT_JOURNAL_FILE%/*}" || return 1
+	persistent_state_file="${SS_STATSD_PERSISTENT_STATE_FILE}"
+	persistent_journal_file="${SS_STATSD_PERSISTENT_JOURNAL_FILE}"
+	persistence_mode='journal'
+	if ! ss_statistics_persistence_enabled; then
+		persistent_state_file=''
+		persistent_journal_file=''
+		persistence_mode='volatile'
+	fi
+
+	mkdir -p "${SS_STATISTICS_DIR}" || return 1
+	if [ -n "$persistent_state_file" ]; then
+		mkdir -p "${persistent_state_file%/*}" || return 1
+	fi
+	if [ -n "$persistent_journal_file" ]; then
+		mkdir -p "${persistent_journal_file%/*}" || return 1
+	fi
 	stats_acquire_lock || return 0
 
 	trap 'stats_cleanup' EXIT
@@ -169,9 +184,14 @@ main() {
 		[ -n "$configured_lease_file" ] && lease_file="$configured_lease_file"
 	fi
 
-	log_info "Starting statistics collector (snapshot=${snapshot_interval}s configured_snapshot=${configured_snapshot_interval}s retention=${retention_hours}h journal=${SS_STATSD_PERSISTENT_INTERVAL_S}s compact=${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S}s)"
+	log_info "Starting statistics collector (snapshot=${snapshot_interval}s configured_snapshot=${configured_snapshot_interval}s retention=${retention_hours}h persistence=${persistence_mode} journal=${SS_STATSD_PERSISTENT_INTERVAL_S}s compact=${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S}s)"
 
-	stats_run_collector "$snapshot_interval" "$retention_hours" "$lease_file" || rc=$?
+	stats_run_collector \
+		"$snapshot_interval" \
+		"$retention_hours" \
+		"$lease_file" \
+		"$persistent_state_file" \
+		"$persistent_journal_file" || rc=$?
 	return "$rc"
 }
 

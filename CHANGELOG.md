@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.18-r9] - 2026-09-02
+
+### Changed
+- Run Statistics on GL-MT300N-V2 in volatile tmpfs-only mode by disabling the persistent snapshot and journal paths while keeping runtime state and `statistics.json` snapshots available.
+- Avoid creating or touching Statistics flash-persistence directories on GL-MT300N-V2; other device profiles continue using the existing journal-based persistence path unchanged.
+
+### Fixed
+- Prevent periodic Statistics persistence and journal I/O from contributing to latency spikes on resource-constrained GL-MT300N-V2 routers.
+
 ## [0.3.18-r8] - 2026-09-01
 
 ### Changed
