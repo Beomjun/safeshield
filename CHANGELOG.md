@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.18-r11] - 2026-09-02
+
+### Changed
+
+- Adopt ShellSpec 0.28.1 as the shell test runner and use its `spec/*_spec.sh` discovery instead of maintaining a manual test list in `tests/run.sh`.
+- Run the existing POSIX shell regression scripts as individual ShellSpec examples so their established assertions and OpenWrt-specific mocks remain intact during the migration.
+- Pin ShellSpec 0.28.1 in GitHub Actions and keep the compatibility `tests/run.sh` entry point for local and CI usage.
+- Exclude ShellSpec DSL spec files from general `shfmt` formatting while continuing to lint normal shell helpers and production scripts.
+- Treat legacy test stdout as an expected success message and require empty stderr so ShellSpec does not emit unverified-output warnings.
+
 ## [0.3.18-r10] - 2026-09-02
 
 ### Fixed

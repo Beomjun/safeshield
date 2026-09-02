@@ -27,6 +27,10 @@ collect_file() {
 	[ -f "$file" ] || return 0
 
 	case "$file" in
+		spec/*_spec.sh)
+			# ShellSpec DSL is valid shell syntax but is not supported by shfmt.
+			return 0
+			;;
 		*.sh | */init.d/* | */uci-defaults/* | */hotplug.d/*)
 			printf '%s\n' "$file" >>"$TMPFILE"
 			return 0

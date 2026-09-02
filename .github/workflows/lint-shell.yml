@@ -21,6 +21,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libjson-c-dev pkg-config shellcheck shfmt
 
+      - name: Install ShellSpec
+        env:
+          SHELLSPEC_VERSION: 0.28.1
+        run: |
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/lib"
+          git clone --depth 1 --branch "$SHELLSPEC_VERSION" \
+            https://github.com/shellspec/shellspec.git "$HOME/.local/lib/shellspec"
+          ln -s "$HOME/.local/lib/shellspec/shellspec" "$HOME/.local/bin/shellspec"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/shellspec" --version
+
       - name: Build ucode
         env:
           UCODE_COMMIT: 85922056ef7abeace3cca3ab28bc1ac2d88e31b1
