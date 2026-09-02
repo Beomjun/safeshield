@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.18-r12] - 2026-09-02
+
+### Changed
+
+- Replace the legacy ShellSpec adapter with native ShellSpec suites for the existing SafeShield shell regression coverage.
+- Organize the converted suite into core, blocklist, runtime, statistics, ucode, and tooling specs so failures are reported by feature-oriented ShellSpec examples.
+- Move reusable shell fixtures and integration scenarios under `spec/support/`, where they remain covered by the normal shfmt, ShellCheck, and `sh -n` lint pipeline.
+- Keep `tests/run.sh` as the compatibility entry point while ShellSpec directly discovers only native `spec/*_spec.sh` files.
+- Preserve the existing ucode test programs under `tests/ucode/` and invoke them from the native ShellSpec ucode example.
+
 ## [0.3.18-r11] - 2026-09-02
 
 ### Changed
