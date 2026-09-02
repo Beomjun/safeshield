@@ -66,4 +66,4 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: REQUIRE_UCODE=1 sh tests/run.sh
+        run: REQUIRE_UCODE=1 shellspec

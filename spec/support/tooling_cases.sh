@@ -18,7 +18,8 @@ ss_case_tooling() (
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/.pre-commit-config.yaml" 'always_run: true'
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/.github/workflows/lint-shell.yml" 'sh scripts/lint.sh'
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/.github/workflows/lint-shell.yml" 'SHELLSPEC_VERSION: 0.28.1'
-	ss_spec_assert_file_contains "$SS_SPEC_ROOT/tests/run.sh" 'exec shellspec "$@"'
+	ss_spec_assert_file_contains "$SS_SPEC_ROOT/.github/workflows/lint-shell.yml" 'run: REQUIRE_UCODE=1 shellspec'
+	[ ! -e "$SS_SPEC_ROOT/tests/run.sh" ]
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/scripts/lint.sh" 'spec/*_spec.sh)'
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/scripts/lint.sh" 'shfmt -d -ci'
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/scripts/lint.sh" 'shellcheck -x -S warning'

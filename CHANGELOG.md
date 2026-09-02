@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.18-r13] - 2026-09-02
+
+### Changed
+
+- Remove the `tests/run.sh` compatibility wrapper now that the shell regression suite is fully native ShellSpec.
+- Run ShellSpec directly in GitHub Actions with `REQUIRE_UCODE=1 shellspec`, leaving a single test entry point for local and CI execution.
+- Extend the tooling contract to require direct ShellSpec CI execution and prevent the legacy `tests/run.sh` wrapper from being reintroduced.
+
 ## [0.3.18-r12] - 2026-09-02
 
 ### Changed
