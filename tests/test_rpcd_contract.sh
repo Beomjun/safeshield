@@ -6,6 +6,7 @@ ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 ENTRY="$ROOT/files/usr/share/rpcd/ucode/safeshield.uc"
 ACL="$ROOT/files/usr/share/rpcd/acl.d/safeshield.json"
 MAKEFILE="$ROOT/Makefile"
+STATISTICS_MODULE="$ROOT/files/usr/share/rpcd/ucode/safeshield/statistics.uc"
 
 fail() {
 	printf 'FAIL: %s\n' "$1" >&2
@@ -41,5 +42,8 @@ done
 
 grep -Fq './files/usr/share/rpcd/ucode/safeshield/*.uc' "$MAKEFILE" || fail 'package install no longer includes rpcd modules'
 grep -Fq './files/usr/share/rpcd/acl.d/safeshield.json' "$MAKEFILE" || fail 'package install no longer includes the rpcd ACL'
+grep -Fq 'effective_snapshot_interval_s: to_int(data.snapshot_interval_s, snapshot_interval_s)' "$STATISTICS_MODULE" || {
+	fail 'statistics RPC no longer exposes the effective collector snapshot interval'
+}
 
 printf '%s\n' 'rpcd contract tests: ok'

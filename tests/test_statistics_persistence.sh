@@ -201,4 +201,31 @@ grep -F 'hourly: sanitize_hourly(item.hourly)' \
 grep -F 'persistence_healthy: to_bool(data.persistence_healthy, false)' \
 	"$ROOT/files/usr/share/rpcd/ucode/safeshield/statistics.uc" >/dev/null
 
+# Volatile mode must discard stale persistence metadata restored from an older
+# tmpfs state and must report the effective collector snapshot interval.
+VOLATILE_STATE="$TMP/volatile-state.tsv"
+VOLATILE_JSON="$TMP/volatile-statistics.json"
+cat >"$VOLATILE_STATE" <<'STATE'
+meta	1787950800	1787950800	1	0	0	1787950700	3	1787950800	0	2	1787950600	1787950500	1787947200
+bucket	1787950800	1	0
+STATE
+: >"$LOG"
+awk \
+	-v state_file="$VOLATILE_STATE" \
+	-v json_file="$VOLATILE_JSON" \
+	-v snapshot_interval=300 \
+	-v retention_hours=168 \
+	-v lease_file="$LEASES" \
+	-v fixed_now=1787954400 \
+	-f "$ROOT/files/usr/lib/safeshield/statistics.awk" \
+	<"$LOG"
+grep -F '"persistence_enabled":false' "$VOLATILE_JSON" >/dev/null
+grep -F '"persistence_healthy":true' "$VOLATILE_JSON" >/dev/null
+grep -F '"persistence_mode":"none"' "$VOLATILE_JSON" >/dev/null
+grep -F '"persistent_error_count":0' "$VOLATILE_JSON" >/dev/null
+grep -F '"persistent_last_error_at":0' "$VOLATILE_JSON" >/dev/null
+grep -F '"persistent_updated_at":0' "$VOLATILE_JSON" >/dev/null
+grep -F '"persistent_compacted_at":0' "$VOLATILE_JSON" >/dev/null
+grep -F '"snapshot_interval_s":300' "$VOLATILE_JSON" >/dev/null
+
 printf '%s\n' 'statistics persistence tests: ok'

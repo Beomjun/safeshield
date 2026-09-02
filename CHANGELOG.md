@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.18-r10] - 2026-09-02
+
+### Fixed
+
+- Clear stale Statistics persistence health, error and checkpoint metadata when persistent storage is disabled.
+- Keep persistence health non-erroring in volatile mode and avoid scheduling persistent checkpoint or compaction work when no persistent paths are configured.
+- Record the collector's effective snapshot interval in runtime statistics and expose it separately from the configured UCI interval so GL-MT300N-V2 reports its 300-second runtime interval.
+
 ## [0.3.18-r9] - 2026-09-02
 
 ### Changed

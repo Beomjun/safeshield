@@ -1001,7 +1001,7 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 
 	persistence_enabled = (persistent_state_file != "" || persistent_journal_file != "") ? "true" : "false"
 	persistent = (persistence_enabled == "true" && persistence_healthy && persistent_updated_at > 0) ? "true" : "false"
-	healthy = (persistence_enabled == "true" && persistence_healthy) ? "true" : "false"
+	healthy = (persistence_enabled == "true") ? (persistence_healthy ? "true" : "false") : "true"
 	volatile_state = (persistence_enabled == "true") ? "false" : "true"
 	storage = (persistence_enabled == "true") ? "tmpfs+flash" : "tmpfs"
 	persistence_mode = (persistent_journal_file != "") ? "journal" : ((persistent_state_file != "") ? "snapshot" : "none")
@@ -1014,6 +1014,7 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 	printf "\"persistent_error_count\":%d,\"persistent_last_error_at\":%d,", persistent_error_count, persistent_last_error_at >> tmp
 	printf "\"persistent_updated_at\":%d,\"persistent_checkpoint_interval_s\":%d,", persistent_updated_at, persistent_interval >> tmp
 	printf "\"persistent_compacted_at\":%d,\"persistent_compact_interval_s\":%d,", persistent_compacted_at, persistent_compact_interval >> tmp
+	printf "\"snapshot_interval_s\":%d,", snapshot_interval >> tmp
 	printf "\"started_at\":%d,\"session_started_at\":%d,\"updated_at\":%d,", started_at, session_started_at, now >> tmp
 	printf "\"retention_hours\":%d,", retention_hours >> tmp
 	printf "\"device_limit\":%d,\"devices_truncated\":%s,", max_devices, truncated >> tmp
@@ -1215,6 +1216,14 @@ BEGIN {
 		}
 	}
 
+	if (persistent_state_file == "" && persistent_journal_file == "") {
+		persistent_updated_at = 0
+		persistent_compacted_at = 0
+		last_journal_completed_bucket = 0
+		persistence_healthy = 1
+		persistent_error_count = 0
+		persistent_last_error_at = 0
+	}
 	if (started_at <= 0) {
 		started_at = current_time()
 	}
@@ -1225,14 +1234,20 @@ BEGIN {
 	if (last_snapshot <= 0) {
 		last_snapshot = session_started_at
 	}
-	if (last_journal_completed_bucket <= 0 && persistent_updated_at > 0) {
-		last_journal_completed_bucket = hour_start(persistent_updated_at) - 3600
+	if (persistent_state_file != "" || persistent_journal_file != "") {
+		if (last_journal_completed_bucket <= 0 && persistent_updated_at > 0) {
+			last_journal_completed_bucket = hour_start(persistent_updated_at) - 3600
+		}
+		if (persistent_compacted_at <= 0) {
+			persistent_compacted_at = (persistent_updated_at > 0) ? persistent_updated_at : current_time()
+		}
+		schedule_next_persistent(current_time())
+		schedule_next_compaction(current_time())
 	}
-	if (persistent_compacted_at <= 0) {
-		persistent_compacted_at = (persistent_updated_at > 0) ? persistent_updated_at : current_time()
+	else {
+		next_persistent_at = 0
+		next_compact_at = 0
 	}
-	schedule_next_persistent(current_time())
-	schedule_next_compaction(current_time())
 	save_snapshot(current_time(), 0, 1)
 }
 
