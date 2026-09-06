@@ -8,6 +8,7 @@ let config = {
 
 let data = {
     schema: { name: 'collector' },
+    generation_id: 'generation-test',
     started_at: '100',
     updated_at: '200',
     totals: { queries: '120', blocked: '12' },

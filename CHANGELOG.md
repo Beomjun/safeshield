@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.19-r2] - 2026-09-06
+
+### Added
+
+- Add a persistent `generation_id` to statistics state, journal records, JSON output, and the public statistics RPC so one retained dataset can be identified across collector restarts.
+- Document the distinction between dataset-scoped `started_at` and process-scoped `session_started_at`.
+- Add regression coverage for stale journal recovery, internal loopback DNS queries, statistics generation/session identity, and temporary IPv6 device identities.
+
+### Fixed
+
+- Ignore committed journal transactions that are not newer than the loaded persistent base snapshot, preventing stale retained journal data from rolling statistics backward after interrupted compaction.
+- Exclude loopback DNS traffic from both global and per-device statistics so SafeShield's own localhost health checks do not inflate query or blocked counters.
+
 ## [0.3.19-r1] - 2026-09-02
 
 - Bump version for release.

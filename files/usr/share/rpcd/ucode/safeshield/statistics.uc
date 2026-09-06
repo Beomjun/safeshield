@@ -95,6 +95,7 @@ function build_statistics() {
         snapshot_interval_s: snapshot_interval_s,
         effective_snapshot_interval_s: to_int(data.snapshot_interval_s, snapshot_interval_s),
         retention_hours: retention_hours,
+        generation_id: sprintf('%s', data.generation_id || ''),
         started_at: to_int(data.started_at, 0),
         session_started_at: to_int(data.session_started_at, 0),
         updated_at: to_int(data.updated_at, 0),

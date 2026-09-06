@@ -21,4 +21,32 @@ Describe 'SafeShield statistics behavior'
 		The output should equal ''
 		The error should equal ''
 	End
+
+	It 'does not replay journal transactions older than the persistent base'
+		When call ss_case_statistics_stale_journal
+		The status should be success
+		The output should equal ''
+		The error should equal ''
+	End
+
+	It 'excludes internal loopback DNS health checks from statistics'
+		When call ss_case_statistics_internal_queries
+		The status should be success
+		The output should equal ''
+		The error should equal ''
+	End
+
+	It 'keeps a generation stable while collector sessions restart'
+		When call ss_case_statistics_generation
+		The status should be success
+		The output should equal ''
+		The error should equal ''
+	End
+
+	It 'keeps unresolved IPv6 clients as explicit temporary identities'
+		When call ss_case_statistics_ipv6_identity
+		The status should be success
+		The output should equal ''
+		The error should equal ''
+	End
 End

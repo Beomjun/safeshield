@@ -18,7 +18,7 @@ config safeshield 'config'
 	option initial_dnsmasq_restart '0'
 	option dnsmasq_sanity_check '1'
 
-	# Local statistics (RAM only; reset on reboot)
+	# Local statistics (runtime state in RAM; supported profiles also persist aggregates)
 	option statistics_enabled '1'
 	option statistics_snapshot_interval_s '60'
 	option statistics_retention_hours '168'

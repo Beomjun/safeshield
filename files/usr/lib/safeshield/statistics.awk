@@ -218,6 +218,9 @@ function load_state_file(path,    line, fields, count, bucket, key, mac, ip, hos
 			if (count >= 14) {
 				last_journal_completed_bucket = numeric(fields[14], 0)
 			}
+			if (count >= 15) {
+				generation_id = decode_state_field(fields[15])
+			}
 			loaded_state = 1
 		}
 		else if (count >= 4 && fields[1] == "bucket") {
@@ -285,7 +288,7 @@ function journal_file_updated_at(path,    line, fields, count, line_no, current_
 	return (last_commit_line > 0) ? latest_updated : -1
 }
 
-function load_journal_file(path,    line, fields, count, line_no, current_txn, current_start, active_end, txn_updated, txn_started, txn_truncated, txn_session_started, txn_completed, txn_healthy, txn_error_count, txn_last_error, key, mac, ip, hostname, bucket, composite, committed_end) {
+function load_journal_file(path, min_updated_at,    line, fields, count, line_no, current_txn, current_start, active_end, txn_updated, txn_started, txn_truncated, txn_session_started, txn_completed, txn_healthy, txn_error_count, txn_last_error, txn_generation_id, key, mac, ip, hostname, bucket, composite, committed_end) {
 	if (path == "") {
 		return 0
 	}
@@ -325,6 +328,11 @@ function load_journal_file(path,    line, fields, count, line_no, current_txn, c
 				continue
 			}
 			txn_updated = numeric(fields[4], 0)
+			if (min_updated_at >= 0 && txn_updated <= min_updated_at) {
+				current_txn = ""
+				active_end = 0
+				continue
+			}
 			txn_started = numeric(fields[5], 0)
 			txn_truncated = numeric(fields[6], 0) ? 1 : 0
 			txn_session_started = numeric(fields[7], 0)
@@ -332,6 +340,7 @@ function load_journal_file(path,    line, fields, count, line_no, current_txn, c
 			txn_healthy = numeric(fields[9], 1) ? 1 : 0
 			txn_error_count = numeric(fields[10], 0)
 			txn_last_error = numeric(fields[11], 0)
+			txn_generation_id = (count >= 12) ? decode_state_field(fields[12]) : ""
 			continue
 		}
 		if (current_txn == "" || line_no > active_end) {
@@ -380,6 +389,9 @@ function load_journal_file(path,    line, fields, count, line_no, current_txn, c
 			if (txn_started > 0) {
 				started_at = txn_started
 			}
+			if (txn_generation_id != "") {
+				generation_id = txn_generation_id
+			}
 			devices_truncated = txn_truncated
 			if (txn_session_started > 0) {
 				loaded_session_started_at = txn_session_started
@@ -393,7 +405,7 @@ function load_journal_file(path,    line, fields, count, line_no, current_txn, c
 			persistent_last_error_at = txn_last_error
 			updated_at = txn_updated
 			loaded_state = 1
-			state_schema_version = 3
+			state_schema_version = 4
 			current_txn = ""
 			active_end = 0
 		}
@@ -574,8 +586,12 @@ function reconcile_ip_devices(    ip, ip_key, mac, hostname) {
 	}
 }
 
+function is_internal_statistics_client(ip) {
+	return (ip == "::1" || ip ~ /^127\./)
+}
+
 function device_key_for_ip(ip, now,    cached_key, mac, hostname, ip_key, selected) {
-	if (ip == "" || ip == "127.0.0.1" || ip == "::1") {
+	if (ip == "" || is_internal_statistics_client(ip)) {
 		return ""
 	}
 
@@ -712,11 +728,11 @@ function save_state_file(path, now,    tmp, bucket, cutoff, key, composite, part
 	}
 
 	tmp = path ".tmp"
-	printf "meta\t%d\t%d\t%d\t%d\t%d\t%d\t3\t%d\t%d\t%d\t%d\t%d\t%d\n", \
+	printf "meta\t%d\t%d\t%d\t%d\t%d\t%d\t4\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n", \
 		started_at, updated_at, total_queries, total_blocked, devices_truncated, \
 		persistent_updated_at, session_started_at, persistence_healthy, \
 		persistent_error_count, persistent_last_error_at, persistent_compacted_at, \
-		last_journal_completed_bucket > tmp
+		last_journal_completed_bucket, normalize_state_field(generation_id) > tmp
 	cutoff = hour_start(now) - ((retention_hours - 1) * 3600)
 	for (bucket = cutoff; bucket <= hour_start(now); bucket += 3600) {
 		if ((bucket in queries) || (bucket in blocked)) {
@@ -819,10 +835,10 @@ function write_journal_transaction(now, first_bucket, last_bucket, completed_thr
 
 	tmp = state_file ".journal.tmp"
 	txn_id = sprintf("%d-%d-%d", now, event_index, ++journal_txn_seq)
-	printf "begin\t%s\t1\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", \
+	printf "begin\t%s\t2\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n", \
 		txn_id, now, started_at, devices_truncated, session_started_at, \
 		completed_through, persistence_healthy, persistent_error_count, \
-		persistent_last_error_at > tmp
+		persistent_last_error_at, normalize_state_field(generation_id) > tmp
 
 	for (key in journal_deleted_device) {
 		printf "delete_device\t%s\n", normalize_state_field(key) >> tmp
@@ -924,7 +940,8 @@ function maybe_compact_persistent(now,    previous_compacted) {
 	}
 
 	# The base snapshot is already complete. If journal truncation is interrupted,
-	# replaying the retained absolute upserts is still safe and cannot double-count.
+	# startup ignores committed transactions whose updated_at is not newer than
+	# the base snapshot, preventing retained absolute upserts from rolling it back.
 	if (!clear_journal_file(persistent_journal_file)) {
 		persistent_error_count++
 		persistent_last_error_at = now
@@ -1015,6 +1032,7 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 	printf "\"persistent_updated_at\":%d,\"persistent_checkpoint_interval_s\":%d,", persistent_updated_at, persistent_interval >> tmp
 	printf "\"persistent_compacted_at\":%d,\"persistent_compact_interval_s\":%d,", persistent_compacted_at, persistent_compact_interval >> tmp
 	printf "\"snapshot_interval_s\":%d,", snapshot_interval >> tmp
+	printf "\"generation_id\":\"%s\",", json_escape(generation_id) >> tmp
 	printf "\"started_at\":%d,\"session_started_at\":%d,\"updated_at\":%d,", started_at, session_started_at, now >> tmp
 	printf "\"retention_hours\":%d,", retention_hours >> tmp
 	printf "\"device_limit\":%d,\"devices_truncated\":%s,", max_devices, truncated >> tmp
@@ -1106,6 +1124,10 @@ function save_snapshot(now, force_persistent, force_snapshot,    serialize_snaps
 }
 
 function record_event(query_delta, blocked_delta, client_ip,    now, bucket) {
+	if (is_internal_statistics_client(client_ip)) {
+		return
+	}
+
 	now = current_time()
 	bucket = hour_start(now)
 	snapshot_dirty = 1
@@ -1144,6 +1166,10 @@ BEGIN {
 	max_devices = numeric(max_devices, 128)
 	fixed_now = numeric(fixed_now, 0)
 	fixed_step = numeric(fixed_step, 0)
+	generation_seed = normalize_state_field(generation_seed)
+	if (generation_seed == "*") {
+		generation_seed = ""
+	}
 	event_index = 0
 	snapshot_dirty = 0
 	device_count = 0
@@ -1201,7 +1227,7 @@ BEGIN {
 			load_state_file(persistent_state_file)
 		}
 		if (persistent_journal_updated_at >= 0) {
-			load_journal_file(persistent_journal_file)
+			load_journal_file(persistent_journal_file, persistent_state_updated_at)
 		}
 	}
 	else if (tmp_state_updated_at >= 0) {
@@ -1212,7 +1238,7 @@ BEGIN {
 			load_state_file(persistent_state_file)
 		}
 		if (persistent_journal_updated_at >= 0) {
-			load_journal_file(persistent_journal_file)
+			load_journal_file(persistent_journal_file, persistent_state_updated_at)
 		}
 	}
 
@@ -1224,9 +1250,18 @@ BEGIN {
 		persistent_error_count = 0
 		persistent_last_error_at = 0
 	}
+	# started_at identifies the lifetime of the currently retained statistics
+	# dataset. It survives collector restarts whenever state can be restored.
 	if (started_at <= 0) {
 		started_at = current_time()
 	}
+	# generation_id is the stable identity for that dataset. The stats daemon
+	# supplies a fresh candidate on every process start, but restored state wins.
+	if (generation_id == "") {
+		generation_id = (generation_seed != "") ? generation_seed : sprintf("legacy-%d", started_at)
+	}
+	# session_started_at is process-scoped and intentionally changes every time
+	# the collector starts, even when generation_id and started_at are restored.
 	session_started_at = current_time()
 	migrate_legacy_device_totals(current_time())
 	refresh_leases(current_time(), 1)

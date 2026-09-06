@@ -7,6 +7,7 @@ assert(result.schema.name == 'safeshield.statistics', 'statistics schema is pres
 assert(result.enabled == true && result.available == true, 'statistics availability is reported');
 assert(result.collector_running == true, 'statistics collector state is reported');
 assert(result.snapshot_interval_s == 30 && result.effective_snapshot_interval_s == 30 && result.retention_hours == 24, 'statistics config values are normalized');
+assert(result.generation_id == 'generation-test', 'statistics generation is preserved');
 assert(result.started_at == 100 && result.updated_at == 200, 'statistics timestamps are normalized');
 assert(result.totals.queries == 120 && result.totals.blocked == 12, 'statistics totals are normalized');
 assert(length(result.hourly) == 2, 'invalid hourly entries are discarded');

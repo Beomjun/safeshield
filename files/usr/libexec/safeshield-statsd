@@ -26,6 +26,25 @@ stats_fifo=''
 stats_lock_dir=''
 stats_lock_owned=0
 
+stats_new_generation_id() {
+	local generation_id="${SS_STATSD_GENERATION_ID:-}"
+
+	if [ -n "$generation_id" ]; then
+		printf '%s\n' "$generation_id"
+		return 0
+	fi
+
+	if [ -r /proc/sys/kernel/random/uuid ]; then
+		IFS= read -r generation_id </proc/sys/kernel/random/uuid || generation_id=''
+	fi
+
+	if [ -z "$generation_id" ]; then
+		generation_id="fallback-$(date +%s 2>/dev/null || printf '0')-$$"
+	fi
+
+	printf '%s\n' "$generation_id"
+}
+
 stats_process_running() {
 	local pid="${1:-}"
 	[ -n "$pid" ] || return 1
@@ -94,7 +113,11 @@ stats_run_collector() {
 	local lease_file="$3"
 	local persistent_state_file="$4"
 	local persistent_journal_file="$5"
-	local rc=0
+	local generation_id rc=0
+
+	# This is only a candidate for a brand-new dataset. statistics.awk keeps the
+	# generation restored from tmpfs or persistent state when one already exists.
+	generation_id="$(stats_new_generation_id)"
 
 	stats_fifo="${SS_STATISTICS_DIR}/events.$$"
 	rm -f "$stats_fifo"
@@ -119,6 +142,7 @@ stats_run_collector() {
 		-v lease_refresh_interval=60 \
 		-v identity_cache_ttl=60 \
 		-v max_devices=128 \
+		-v generation_seed="${generation_id}" \
 		-f "$SS_STATSD_AWK_PROGRAM" \
 		<"$stats_fifo" &
 	stats_awk_pid=$!

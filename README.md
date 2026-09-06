@@ -354,19 +354,28 @@ ubus call safeshield statistics
 ```
 
 Statistics are collected from live dnsmasq query logging. Raw queried domains
-are never written to the statistics state. In addition to global hourly
-query/block counters, SafeShield keeps per-device totals and per-device hourly
-buckets locally. DHCP clients are identified by MAC address using the dnsmasq
-lease file, with the current IP and hostname included for the local UI. Clients
-that cannot be matched to a DHCP lease use a temporary IP-based identity.
-Device statistics are capped at 128 identities to bound memory use on low-end
-routers.
+are never written to the statistics state. Loopback (`127.0.0.0/8` and `::1`)
+queries are excluded so SafeShield's own DNS health checks do not inflate user
+query or blocked counters. In addition to global hourly query/block counters,
+SafeShield keeps per-device totals and per-device hourly buckets locally. DHCP
+clients are identified by MAC address using the dnsmasq lease file, with the
+current IP and hostname included for the local UI. Clients that cannot be
+matched to a DHCP lease use a temporary IP-based identity. Device statistics
+are capped at 128 identities to bound memory use on low-end routers.
+
+Each retained statistics dataset has a stable `generation_id`. `started_at` is
+the creation time of that retained dataset and is restored together with the
+generation when the collector restarts. `session_started_at` is the start time
+of the current collector process and therefore changes on every collector
+restart. This distinction lets cloud ingestion upsert repeated snapshots from
+the same generation without treating a process restart as a new dataset.
+
 Hot statistics live under `/tmp/safeshield/statistics/` and are retained for up
-to 168 hourly buckets. Aggregate state is checkpointed atomically to
-`/etc/safeshield/statistics-state.tsv` at most once per hour and on graceful
-collector shutdown, then restored after reboot. The collector starts `logread`
-in follow-only mode, so existing system log entries are not counted a second
-time when the service restarts.
+to 168 hourly buckets. Supported profiles additionally persist aggregate state
+with a compact base snapshot plus hourly journal, while constrained profiles
+may stay tmpfs-only. The collector starts `logread` in follow-only mode, so
+existing system log entries are not counted a second time when the service
+restarts.
 
 The default statistics settings are:
 

@@ -450,3 +450,183 @@ CAT
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/share/rpcd/ucode/safeshield/statistics.uc" "persistence_mode: sprintf('%s', data.persistence_mode || 'none')"
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/share/rpcd/ucode/safeshield/statistics.uc" 'persistent_compact_interval_s: to_int(data.persistent_compact_interval_s, 604800)'
 )
+
+ss_case_statistics_stale_journal() (
+	set -eu
+	TMP="$(ss_spec_tmpdir)"
+	trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+	STATE="$TMP/state.tsv"
+	JSON="$TMP/statistics.json"
+	PERSISTENT="$TMP/statistics-state.tsv"
+	JOURNAL="$TMP/statistics-journal.tsv"
+	LEASES="$TMP/dhcp.leases"
+	ARP="$TMP/arp"
+	LOG="$TMP/dnsmasq.log"
+	: >"$LEASES"
+	printf '%s\n' 'IP address       HW type     Flags       HW address            Mask     Device' >"$ARP"
+	: >"$LOG"
+
+	cat >"$PERSISTENT" <<'STATE'
+meta	1787950800	1787958000	5	2	0	1787958000	4	1787958000	1	0	0	1787958000	1787954400	generation-base
+bucket	1787954400	5	2
+STATE
+	cat >"$JOURNAL" <<'JOURNAL'
+begin	stale-transaction	2	1787954400	1787950800	0	1787954400	1787950800	1	0	0	generation-base
+bucket	1787954400	1	0
+commit	stale-transaction
+JOURNAL
+
+	awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v persistent_state_file="$PERSISTENT" \
+		-v persistent_journal_file="$JOURNAL" \
+		-v persistent_interval=3600 \
+		-v persistent_compact_interval=604800 \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v lease_file="$LEASES" \
+		-v arp_file="$ARP" \
+		-v generation_seed='generation-new-candidate' \
+		-v fixed_now=1787961600 \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
+		<"$LOG"
+
+	ss_spec_assert_file_contains "$JSON" '"generation_id":"generation-base"'
+	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":5,"blocked":2}'
+	ss_spec_assert_file_contains "$JSON" '{"bucket_start":1787954400,"queries":5,"blocked":2}'
+	! grep -F '{"bucket_start":1787954400,"queries":1,"blocked":0}' "$JSON" >/dev/null
+)
+
+ss_case_statistics_internal_queries() (
+	set -eu
+	TMP="$(ss_spec_tmpdir)"
+	trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+	STATE="$TMP/state.tsv"
+	JSON="$TMP/statistics.json"
+	LEASES="$TMP/dhcp.leases"
+	ARP="$TMP/arp"
+	LOG="$TMP/dnsmasq.log"
+	: >"$LEASES"
+	printf '%s\n' 'IP address       HW type     Flags       HW address            Mask     Device' >"$ARP"
+	cat >"$LOG" <<'LOGS'
+daemon.info dnsmasq[1]: 10 127.0.0.1/50000 query[A] health.example from 127.0.0.1
+daemon.info dnsmasq[1]: 10 127.0.0.1/50000 config health.example is 0.0.0.0
+daemon.info dnsmasq[1]: 11 ::1/50001 query[AAAA] health-v6.example from ::1
+daemon.info dnsmasq[1]: 11 ::1/50001 config health-v6.example is ::
+daemon.info dnsmasq[1]: 12 192.168.1.20/50002 query[A] ads.example from 192.168.1.20
+daemon.info dnsmasq[1]: 12 192.168.1.20/50002 config ads.example is 0.0.0.0
+LOGS
+
+	awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v lease_file="$LEASES" \
+		-v arp_file="$ARP" \
+		-v generation_seed='generation-internal' \
+		-v fixed_now=1787950800 \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
+		<"$LOG"
+
+	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":1,"blocked":1}'
+	ss_spec_assert_file_contains "$JSON" '"id":"ip:192.168.1.20"'
+	! grep -F '"id":"ip:127.' "$JSON" >/dev/null
+	! grep -F '"id":"ip:::1"' "$JSON" >/dev/null
+)
+
+ss_case_statistics_generation() (
+	set -eu
+	TMP="$(ss_spec_tmpdir)"
+	trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+	STATE="$TMP/state.tsv"
+	JSON="$TMP/statistics.json"
+	LEASES="$TMP/dhcp.leases"
+	ARP="$TMP/arp"
+	LOG="$TMP/dnsmasq.log"
+	: >"$LEASES"
+	printf '%s\n' 'IP address       HW type     Flags       HW address            Mask     Device' >"$ARP"
+	: >"$LOG"
+
+	awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v lease_file="$LEASES" \
+		-v arp_file="$ARP" \
+		-v generation_seed='generation-one' \
+		-v fixed_now=1787950800 \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
+		<"$LOG"
+
+	ss_spec_assert_file_contains "$JSON" '"generation_id":"generation-one"'
+	ss_spec_assert_file_contains "$JSON" '"started_at":1787950800,"session_started_at":1787950800'
+	ss_spec_assert_eq "$(awk -F '\t' '$1 == "meta" { print $8 " " $15 }' "$STATE")" '4 generation-one'
+
+	awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v lease_file="$LEASES" \
+		-v arp_file="$ARP" \
+		-v generation_seed='generation-two' \
+		-v fixed_now=1787950860 \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
+		<"$LOG"
+
+	ss_spec_assert_file_contains "$JSON" '"generation_id":"generation-one"'
+	ss_spec_assert_file_contains "$JSON" '"started_at":1787950800,"session_started_at":1787950860'
+	! grep -F '"generation_id":"generation-two"' "$JSON" >/dev/null
+
+	rm -f "$STATE" "$JSON"
+	awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v lease_file="$LEASES" \
+		-v arp_file="$ARP" \
+		-v generation_seed='generation-two' \
+		-v fixed_now=1787950920 \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
+		<"$LOG"
+
+	ss_spec_assert_file_contains "$JSON" '"generation_id":"generation-two"'
+	ss_spec_assert_file_contains "$JSON" '"started_at":1787950920,"session_started_at":1787950920'
+)
+
+ss_case_statistics_ipv6_identity() (
+	set -eu
+	TMP="$(ss_spec_tmpdir)"
+	trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+	STATE="$TMP/state.tsv"
+	JSON="$TMP/statistics.json"
+	LEASES="$TMP/dhcp.leases"
+	ARP="$TMP/arp"
+	LOG="$TMP/dnsmasq.log"
+	: >"$LEASES"
+	printf '%s\n' 'IP address       HW type     Flags       HW address            Mask     Device' >"$ARP"
+	cat >"$LOG" <<'LOGS'
+daemon.info dnsmasq[1]: 20 2001:db8::100/50000 query[AAAA] one.example from 2001:db8::100
+daemon.info dnsmasq[1]: 21 2001:db8::200/50001 query[AAAA] two.example from 2001:db8::200
+LOGS
+
+	awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v lease_file="$LEASES" \
+		-v arp_file="$ARP" \
+		-v generation_seed='generation-ipv6' \
+		-v fixed_now=1787950800 \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
+		<"$LOG"
+
+	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":2,"blocked":0}'
+	ss_spec_assert_file_contains "$JSON" '"id":"ip:2001:db8::100","mac":"","ip":"2001:db8::100","hostname":"","identified":false'
+	ss_spec_assert_file_contains "$JSON" '"id":"ip:2001:db8::200","mac":"","ip":"2001:db8::200","hostname":"","identified":false'
+)

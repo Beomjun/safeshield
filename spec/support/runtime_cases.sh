@@ -111,6 +111,7 @@ EOF_AWK
 		SS_STATSD_FUNCTIONS_LIB="$TMP/functions.sh" \
 		SS_STATSD_CORE_LIB="$TMP/core.sh" \
 		SS_STATSD_AWK_PROGRAM="$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
+		SS_STATSD_GENERATION_ID='runtime-generation' \
 		SS_STATSD_PERSISTENT_STATE_FILE="$TMP/flash/statistics-state.tsv" \
 		SS_STATSD_PERSISTENT_JOURNAL_FILE="$TMP/flash/statistics-journal.tsv" \
 		sh "$SS_SPEC_ROOT/files/usr/libexec/safeshield-statsd" &
@@ -131,6 +132,7 @@ dnsmasq'
 	ss_spec_assert_eq "$(cat "$LOGREAD_ARGS_FILE")" "$expected_logread_args"
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'snapshot_interval=300'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'identity_cache_ttl=60'
+	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'generation_seed=runtime-generation'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'persistent_state_file='
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'persistent_journal_file='
 	[ ! -e "$TMP/flash" ]
