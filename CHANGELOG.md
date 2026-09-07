@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.19-r3] - 2026-09-07
+
+### Added
+
+- Resolve IPv6 DNS clients through the kernel NDP neighbor cache so privacy/temporary IPv6 addresses from the same link-layer client converge on one MAC-based statistics identity.
+- Add regression coverage for IPv6 temporary-identity migration, shared-MAC neighbor merging, failed neighbor fallback, and the modular statistics runtime contract.
+
+### Changed
+
+- Split the monolithic statistics AWK collector into focused common, recovery, identity, aggregation, persistence, output, and lifecycle modules loaded together by `safeshield-statsd`.
+- Keep unresolved IPv6 clients on the existing `ip:<address>` fallback until a valid neighbor `lladdr` becomes available, then migrate retained hourly buckets to the MAC identity.
+
 ## [0.3.19-r2] - 2026-09-06
 
 ### Added

@@ -1,6 +1,17 @@
 #!/bin/sh
 # shellcheck shell=sh
 
+ss_statistics_awk() {
+	awk "$@" \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/00-common.awk" \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/10-recovery.awk" \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/20-identity.awk" \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/30-aggregate.awk" \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/40-persistence.awk" \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/50-output.awk" \
+		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/90-main.awk"
+}
+
 ss_case_statistics() (
 	set -eu
 	TMP="$(ss_spec_tmpdir)"
@@ -52,14 +63,13 @@ Sat Aug 29 06:00:02 2026 daemon.info dnsmasq[1]: 12 192.168.1.20/50002 config ad
 Sat Aug 29 06:00:03 2026 daemon.info dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.1.20 aa:bb:cc:dd:ee:ff client
 Sat Aug 29 06:00:04 2026 daemon.info dnsmasq[1]: 13 127.0.0.1/50003 config router.lan is 192.168.1.1
 LOGS
-	awk \
+	ss_statistics_awk \
 		-v state_file="$STATE" \
 		-v json_file="$JSON" \
 		-v snapshot_interval=60 \
 		-v retention_hours=168 \
 		-v lease_file="$LEASES" \
 		-v fixed_now=1787950800 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$FIXTURE"
 	ss_spec_assert_eq "$(awk -F '\t' '$1 == "meta" { print $4 " " $5 }' "$STATE")" '3 2'
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":3,"blocked":2}'
@@ -70,14 +80,13 @@ LOGS
 	cat >"$FIXTURE" <<'LOGS'
 Sat Aug 29 07:00:00 2026 daemon.info dnsmasq[1]: 14 192.168.1.30/50004 query[A] openwrt.org from 192.168.1.30
 LOGS
-	awk \
+	ss_statistics_awk \
 		-v state_file="$STATE" \
 		-v json_file="$JSON" \
 		-v snapshot_interval=60 \
 		-v retention_hours=168 \
 		-v lease_file="$LEASES" \
 		-v fixed_now=1787954400 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$FIXTURE"
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":4,"blocked":2}'
 	ss_spec_assert_file_contains "$JSON" '"id":"11:22:33:44:55:66","mac":"11:22:33:44:55:66","ip":"192.168.1.30","hostname":"laptop","identified":true,"queries":1,"blocked":0'
@@ -89,10 +98,10 @@ LOGS
 	MIGRATE_LOG="$TMP/migrate.log"
 	: >"$MIGRATE_LEASES"
 	printf '%s\n' 'daemon.info dnsmasq[1]: 21 192.168.1.40/50001 query[A] first.example from 192.168.1.40' >"$MIGRATE_LOG"
-	awk -v state_file="$MIGRATE_STATE" -v json_file="$MIGRATE_JSON" -v lease_file="$MIGRATE_LEASES" -v snapshot_interval=60 -v retention_hours=168 -v fixed_now=1787958000 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$MIGRATE_LOG"
+	ss_statistics_awk -v state_file="$MIGRATE_STATE" -v json_file="$MIGRATE_JSON" -v lease_file="$MIGRATE_LEASES" -v snapshot_interval=60 -v retention_hours=168 -v fixed_now=1787958000 <"$MIGRATE_LOG"
 	printf '%s\n' '1788000000 de:ad:be:ef:00:01 192.168.1.40 tablet *' >"$MIGRATE_LEASES"
 	printf '%s\n' 'daemon.info dnsmasq[1]: 22 192.168.1.40/50002 query[A] second.example from 192.168.1.40' >"$MIGRATE_LOG"
-	awk -v state_file="$MIGRATE_STATE" -v json_file="$MIGRATE_JSON" -v lease_file="$MIGRATE_LEASES" -v snapshot_interval=60 -v retention_hours=168 -v fixed_now=1787958061 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$MIGRATE_LOG"
+	ss_statistics_awk -v state_file="$MIGRATE_STATE" -v json_file="$MIGRATE_JSON" -v lease_file="$MIGRATE_LEASES" -v snapshot_interval=60 -v retention_hours=168 -v fixed_now=1787958061 <"$MIGRATE_LOG"
 	ss_spec_assert_file_contains "$MIGRATE_JSON" '"id":"de:ad:be:ef:00:01","mac":"de:ad:be:ef:00:01","ip":"192.168.1.40","hostname":"tablet","identified":true,"queries":2,"blocked":0'
 	! grep -F '"id":"ip:192.168.1.40"' "$MIGRATE_JSON" >/dev/null
 
@@ -118,7 +127,7 @@ device_bucket	de:ad:be:ef:00:02	1787954400	1	1
 bucket	1787950800	3	1
 bucket	1787954400	3	1
 STATE
-	awk -v state_file="$ARP_STATE" -v json_file="$ARP_JSON" -v lease_file="$ARP_LEASES" -v arp_file="$ARP_TABLE" -v snapshot_interval=60 -v retention_hours=168 -v fixed_now=1787954400 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$ARP_LOG"
+	ss_statistics_awk -v state_file="$ARP_STATE" -v json_file="$ARP_JSON" -v lease_file="$ARP_LEASES" -v arp_file="$ARP_TABLE" -v snapshot_interval=60 -v retention_hours=168 -v fixed_now=1787954400 <"$ARP_LOG"
 	ss_spec_assert_file_contains "$ARP_JSON" '"id":"de:ad:be:ef:00:02","mac":"de:ad:be:ef:00:02","ip":"192.168.1.50","hostname":"workstation","identified":true,"queries":6,"blocked":2'
 	! grep -F '"id":"ip:192.168.1.50"' "$ARP_JSON" >/dev/null
 	! grep -F "$(printf 'device_bucket\tip:192.168.1.50\t')" "$ARP_STATE" >/dev/null
@@ -139,13 +148,12 @@ EOF_MV
 	: >"$DIRTY_LOG"
 	: >"$MV_COUNT_FILE"
 	PATH="$FAKE_BIN:$PATH" MV_COUNT_FILE="$MV_COUNT_FILE" REAL_MV="$REAL_MV" \
-		awk \
+		ss_statistics_awk \
 		-v state_file="$DIRTY_STATE" \
 		-v json_file="$DIRTY_JSON" \
 		-v snapshot_interval=60 \
 		-v retention_hours=168 \
 		-v fixed_now=1787954400 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$DIRTY_LOG"
 	ss_spec_assert_eq "$(wc -l <"$MV_COUNT_FILE" | tr -d '[:space:]')" '2'
 )
@@ -164,7 +172,7 @@ ss_case_statistics_persistence() (
 daemon.info dnsmasq[1]: 11 192.168.1.20/50001 query[A] ads.example from 192.168.1.20
 daemon.info dnsmasq[1]: 11 192.168.1.20/50001 config ads.example is 0.0.0.0
 LOGS
-	awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_interval=3600 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787950800 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	ss_statistics_awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_interval=3600 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787950800 <"$LOG"
 	ss_spec_assert_nonempty "$PERSISTENT"
 	ss_spec_assert_file_contains "$JSON" '"version":2'
 	ss_spec_assert_file_contains "$JSON" '"volatile":false'
@@ -175,7 +183,7 @@ LOGS
 
 	rm -f "$STATE" "$JSON"
 	printf '%s\n' 'daemon.info dnsmasq[1]: 12 192.168.1.20/50002 query[A] openwrt.org from 192.168.1.20' >"$LOG"
-	awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_interval=3600 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787954400 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	ss_statistics_awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_interval=3600 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787954400 <"$LOG"
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":2,"blocked":1}'
 	ss_spec_assert_file_contains "$JSON" '{"bucket_start":1787950800,"queries":1,"blocked":1}'
 	ss_spec_assert_file_contains "$JSON" '{"bucket_start":1787954400,"queries":1,"blocked":0}'
@@ -189,7 +197,7 @@ bucket	1787950800	3	1
 device	aa:bb:cc:dd:ee:ff	aa:bb:cc:dd:ee:ff	192.168.1.20	iphone	3	1
 STATE
 	: >"$LOG"
-	awk -v state_file="$LEGACY_STATE" -v json_file="$LEGACY_JSON" -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787950800 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	ss_statistics_awk -v state_file="$LEGACY_STATE" -v json_file="$LEGACY_JSON" -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787950800 <"$LOG"
 	ss_spec_assert_file_contains "$LEGACY_JSON" '"totals":{"queries":3,"blocked":1}'
 	ss_spec_assert_file_contains "$LEGACY_JSON" '"queries":3,"blocked":1,"hourly":[{"bucket_start":1787950800,"queries":3,"blocked":1}]'
 	ss_spec_assert_file_contains "$LEGACY_STATE" "$(printf 'device_bucket\taa:bb:cc:dd:ee:ff\t1787950800\t3\t1')"
@@ -207,7 +215,7 @@ bucket	1787950800	1	0
 bucket	1787954400	1	1
 STATE
 	: >"$LOG"
-	awk \
+	ss_statistics_awk \
 		-v state_file="$LATEST_STATE" \
 		-v json_file="$LATEST_JSON" \
 		-v persistent_state_file="$LATEST_PERSISTENT" \
@@ -216,7 +224,6 @@ STATE
 		-v retention_hours=168 \
 		-v lease_file="$LEASES" \
 		-v fixed_now=1787958000 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$LOG"
 	ss_spec_assert_file_contains "$LATEST_JSON" '"totals":{"queries":2,"blocked":1}'
 
@@ -233,7 +240,7 @@ meta	1787950800	1787958000	999	999	0	1787958000	2	1787958000
 bucket	1787958000	1	1
 STATE
 	: >"$LOG"
-	awk \
+	ss_statistics_awk \
 		-v state_file="$CORRUPT_STATE" \
 		-v json_file="$CORRUPT_JSON" \
 		-v persistent_state_file="$CORRUPT_PERSISTENT" \
@@ -242,7 +249,6 @@ STATE
 		-v retention_hours=168 \
 		-v lease_file="$LEASES" \
 		-v fixed_now=1787961600 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$LOG"
 	ss_spec_assert_file_contains "$CORRUPT_JSON" '"totals":{"queries":2,"blocked":1}'
 
@@ -261,7 +267,7 @@ exec "$REAL_MV" "\${@}"
 EOF_MV
 	chmod +x "$FAIL_BIN/mv"
 	: >"$LOG"
-	PATH="$FAIL_BIN:$PATH" awk -v state_file="$FAIL_STATE" -v json_file="$FAIL_JSON" -v persistent_state_file="$FAIL_TARGET" -v persistent_interval=3600 -v persistent_retry_interval=300 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787965200 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	PATH="$FAIL_BIN:$PATH" ss_statistics_awk -v state_file="$FAIL_STATE" -v json_file="$FAIL_JSON" -v persistent_state_file="$FAIL_TARGET" -v persistent_interval=3600 -v persistent_retry_interval=300 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787965200 <"$LOG"
 	ss_spec_assert_file_contains "$FAIL_JSON" '"persistence_enabled":true'
 	ss_spec_assert_file_contains "$FAIL_JSON" '"persistence_healthy":false'
 	ss_spec_assert_file_contains "$FAIL_JSON" '"persistent_error_count":1'
@@ -280,7 +286,7 @@ meta	1787950800	1787950800	1	0	0	1787950700	3	1787950800	0	2	1787950600	17879505
 bucket	1787950800	1	0
 STATE
 	: >"$LOG"
-	awk -v state_file="$VOLATILE_STATE" -v json_file="$VOLATILE_JSON" -v snapshot_interval=300 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787954400 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	ss_statistics_awk -v state_file="$VOLATILE_STATE" -v json_file="$VOLATILE_JSON" -v snapshot_interval=300 -v retention_hours=168 -v lease_file="$LEASES" -v fixed_now=1787954400 <"$LOG"
 	for expected in \
 		'"persistence_enabled":false' \
 		'"persistence_healthy":true' \
@@ -315,7 +321,7 @@ device_bucket	aa:bb:cc:dd:ee:ff	1787950800	1	1
 STATE
 	before_base="$(cksum "$PERSISTENT")"
 	printf '%s\n' 'daemon.info dnsmasq[1]: 12 192.168.1.20/50002 query[A] openwrt.org from 192.168.1.20' >"$LOG"
-	awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_journal_file="$JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v arp_file="$ARP" -v fixed_now=1787954400 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	ss_statistics_awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_journal_file="$JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v arp_file="$ARP" -v fixed_now=1787954400 <"$LOG"
 	ss_spec_assert_eq "$before_base" "$(cksum "$PERSISTENT")"
 	ss_spec_assert_nonempty "$JOURNAL"
 	ss_spec_assert_file_contains "$JOURNAL" 'begin'
@@ -329,7 +335,7 @@ STATE
 
 	rm -f "$STATE" "$JSON"
 	: >"$LOG"
-	awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_journal_file="$JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v arp_file="$ARP" -v fixed_now=1787958000 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	ss_statistics_awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_journal_file="$JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v arp_file="$ARP" -v fixed_now=1787958000 <"$LOG"
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":2,"blocked":1}'
 	ss_spec_assert_file_contains "$JSON" '{"bucket_start":1787950800,"queries":1,"blocked":1}'
 	ss_spec_assert_file_contains "$JSON" '{"bucket_start":1787954400,"queries":1,"blocked":0}'
@@ -339,13 +345,13 @@ begin	interrupted	1	1787961600	1787950800	0	1787961600	1787958000	1	0	0
 bucket	1787954400	999	999
 PARTIAL
 	rm -f "$STATE" "$JSON"
-	awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_journal_file="$JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v arp_file="$ARP" -v fixed_now=1787961600 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	ss_statistics_awk -v state_file="$STATE" -v json_file="$JSON" -v persistent_state_file="$PERSISTENT" -v persistent_journal_file="$JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v arp_file="$ARP" -v fixed_now=1787961600 <"$LOG"
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":2,"blocked":1}'
 	! grep -F '"queries":999' "$JSON" >/dev/null
 
 	rm -f "$STATE" "$JSON"
 	: >"$LOG"
-	awk \
+	ss_statistics_awk \
 		-v state_file="$STATE" \
 		-v json_file="$JSON" \
 		-v persistent_state_file="$PERSISTENT" \
@@ -357,7 +363,6 @@ PARTIAL
 		-v lease_file="$LEASES" \
 		-v arp_file="$ARP" \
 		-v fixed_now=1787965200 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$LOG"
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":2,"blocked":1}'
 	! grep -F '"queries":999' "$JSON" >/dev/null
@@ -377,7 +382,7 @@ STATE
 daemon.info dnsmasq[1]: 20 192.168.1.20/50020 query[A] one.example from 192.168.1.20
 daemon.info dnsmasq[1]: 21 192.168.1.20/50021 query[A] two.example from 192.168.1.20
 LOGS
-	awk \
+	ss_statistics_awk \
 		-v state_file="$COMPACT_STATE" \
 		-v json_file="$COMPACT_JSON" \
 		-v persistent_state_file="$COMPACT_BASE" \
@@ -390,7 +395,6 @@ LOGS
 		-v arp_file="$ARP" \
 		-v fixed_now=1787954400 \
 		-v fixed_step=3600 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$COMPACT_LOG"
 	ss_spec_assert_file_contains "$COMPACT_BASE" "$(printf 'meta\t1787954400\t1787958000\t3\t0')"
 	ss_spec_assert_file_contains "$COMPACT_JSON" '"totals":{"queries":3,"blocked":0}'
@@ -418,12 +422,12 @@ STATE
 	printf '%s\n' '1788000000 de:ad:be:ef:00:02 192.168.1.50 workstation *' >"$MIGRATE_LEASES"
 	: >"$MIGRATE_EMPTY_LEASES"
 	: >"$LOG"
-	awk -v state_file="$MIGRATE_STATE" -v json_file="$MIGRATE_JSON" -v persistent_state_file="$MIGRATE_BASE" -v persistent_journal_file="$MIGRATE_JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$MIGRATE_LEASES" -v arp_file="$ARP" -v fixed_now=1787954400 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	ss_statistics_awk -v state_file="$MIGRATE_STATE" -v json_file="$MIGRATE_JSON" -v persistent_state_file="$MIGRATE_BASE" -v persistent_journal_file="$MIGRATE_JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$MIGRATE_LEASES" -v arp_file="$ARP" -v fixed_now=1787954400 <"$LOG"
 	ss_spec_assert_file_contains "$MIGRATE_JOURNAL" "$(printf 'delete_device\tip:192.168.1.50')"
 	ss_spec_assert_file_contains "$MIGRATE_JOURNAL" "$(printf 'device_bucket\tde:ad:be:ef:00:02\t1787950800\t3\t1')"
 	ss_spec_assert_file_contains "$MIGRATE_JOURNAL" "$(printf 'device_bucket\tde:ad:be:ef:00:02\t1787954400\t3\t1')"
 	rm -f "$MIGRATE_STATE" "$MIGRATE_JSON"
-	awk -v state_file="$MIGRATE_STATE" -v json_file="$MIGRATE_JSON" -v persistent_state_file="$MIGRATE_BASE" -v persistent_journal_file="$MIGRATE_JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$MIGRATE_EMPTY_LEASES" -v arp_file="$ARP" -v fixed_now=1787958000 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	ss_statistics_awk -v state_file="$MIGRATE_STATE" -v json_file="$MIGRATE_JSON" -v persistent_state_file="$MIGRATE_BASE" -v persistent_journal_file="$MIGRATE_JOURNAL" -v persistent_interval=3600 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$MIGRATE_EMPTY_LEASES" -v arp_file="$ARP" -v fixed_now=1787958000 <"$LOG"
 	ss_spec_assert_file_contains "$MIGRATE_JSON" '"id":"de:ad:be:ef:00:02"'
 	ss_spec_assert_file_contains "$MIGRATE_JSON" '{"bucket_start":1787950800,"queries":3,"blocked":1}'
 	ss_spec_assert_file_contains "$MIGRATE_JSON" '{"bucket_start":1787954400,"queries":3,"blocked":1}'
@@ -440,7 +444,7 @@ STATE
 exit 1
 CAT
 	chmod 755 "$FAIL_BIN/cat"
-	PATH="$FAIL_BIN:$PATH" awk -v state_file="$FAIL_STATE" -v json_file="$FAIL_JSON" -v persistent_state_file="$FAIL_BASE" -v persistent_journal_file="$FAIL_JOURNAL" -v persistent_interval=3600 -v persistent_retry_interval=300 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v arp_file="$ARP" -v fixed_now=1787968800 -f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" <"$LOG"
+	PATH="$FAIL_BIN:$PATH" ss_statistics_awk -v state_file="$FAIL_STATE" -v json_file="$FAIL_JSON" -v persistent_state_file="$FAIL_BASE" -v persistent_journal_file="$FAIL_JOURNAL" -v persistent_interval=3600 -v persistent_retry_interval=300 -v persistent_compact_interval=604800 -v snapshot_interval=60 -v retention_hours=168 -v lease_file="$LEASES" -v arp_file="$ARP" -v fixed_now=1787968800 <"$LOG"
 	ss_spec_assert_file_contains "$FAIL_JSON" '"persistence_mode":"journal"'
 	ss_spec_assert_file_contains "$FAIL_JSON" '"persistence_healthy":false'
 	ss_spec_assert_file_contains "$FAIL_JSON" '"persistent_error_count":1'
@@ -476,7 +480,7 @@ bucket	1787954400	1	0
 commit	stale-transaction
 JOURNAL
 
-	awk \
+	ss_statistics_awk \
 		-v state_file="$STATE" \
 		-v json_file="$JSON" \
 		-v persistent_state_file="$PERSISTENT" \
@@ -489,7 +493,6 @@ JOURNAL
 		-v arp_file="$ARP" \
 		-v generation_seed='generation-new-candidate' \
 		-v fixed_now=1787961600 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$LOG"
 
 	ss_spec_assert_file_contains "$JSON" '"generation_id":"generation-base"'
@@ -518,7 +521,7 @@ daemon.info dnsmasq[1]: 12 192.168.1.20/50002 query[A] ads.example from 192.168.
 daemon.info dnsmasq[1]: 12 192.168.1.20/50002 config ads.example is 0.0.0.0
 LOGS
 
-	awk \
+	ss_statistics_awk \
 		-v state_file="$STATE" \
 		-v json_file="$JSON" \
 		-v snapshot_interval=60 \
@@ -527,7 +530,6 @@ LOGS
 		-v arp_file="$ARP" \
 		-v generation_seed='generation-internal' \
 		-v fixed_now=1787950800 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$LOG"
 
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":1,"blocked":1}'
@@ -549,7 +551,7 @@ ss_case_statistics_generation() (
 	printf '%s\n' 'IP address       HW type     Flags       HW address            Mask     Device' >"$ARP"
 	: >"$LOG"
 
-	awk \
+	ss_statistics_awk \
 		-v state_file="$STATE" \
 		-v json_file="$JSON" \
 		-v snapshot_interval=60 \
@@ -558,14 +560,13 @@ ss_case_statistics_generation() (
 		-v arp_file="$ARP" \
 		-v generation_seed='generation-one' \
 		-v fixed_now=1787950800 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$LOG"
 
 	ss_spec_assert_file_contains "$JSON" '"generation_id":"generation-one"'
 	ss_spec_assert_file_contains "$JSON" '"started_at":1787950800,"session_started_at":1787950800'
 	ss_spec_assert_eq "$(awk -F '\t' '$1 == "meta" { print $8 " " $15 }' "$STATE")" '4 generation-one'
 
-	awk \
+	ss_statistics_awk \
 		-v state_file="$STATE" \
 		-v json_file="$JSON" \
 		-v snapshot_interval=60 \
@@ -574,7 +575,6 @@ ss_case_statistics_generation() (
 		-v arp_file="$ARP" \
 		-v generation_seed='generation-two' \
 		-v fixed_now=1787950860 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$LOG"
 
 	ss_spec_assert_file_contains "$JSON" '"generation_id":"generation-one"'
@@ -582,7 +582,7 @@ ss_case_statistics_generation() (
 	! grep -F '"generation_id":"generation-two"' "$JSON" >/dev/null
 
 	rm -f "$STATE" "$JSON"
-	awk \
+	ss_statistics_awk \
 		-v state_file="$STATE" \
 		-v json_file="$JSON" \
 		-v snapshot_interval=60 \
@@ -591,7 +591,6 @@ ss_case_statistics_generation() (
 		-v arp_file="$ARP" \
 		-v generation_seed='generation-two' \
 		-v fixed_now=1787950920 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$LOG"
 
 	ss_spec_assert_file_contains "$JSON" '"generation_id":"generation-two"'
@@ -614,7 +613,7 @@ daemon.info dnsmasq[1]: 20 2001:db8::100/50000 query[AAAA] one.example from 2001
 daemon.info dnsmasq[1]: 21 2001:db8::200/50001 query[AAAA] two.example from 2001:db8::200
 LOGS
 
-	awk \
+	ss_statistics_awk \
 		-v state_file="$STATE" \
 		-v json_file="$JSON" \
 		-v snapshot_interval=60 \
@@ -623,10 +622,90 @@ LOGS
 		-v arp_file="$ARP" \
 		-v generation_seed='generation-ipv6' \
 		-v fixed_now=1787950800 \
-		-f "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
 		<"$LOG"
 
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":2,"blocked":0}'
 	ss_spec_assert_file_contains "$JSON" '"id":"ip:2001:db8::100","mac":"","ip":"2001:db8::100","hostname":"","identified":false'
 	ss_spec_assert_file_contains "$JSON" '"id":"ip:2001:db8::200","mac":"","ip":"2001:db8::200","hostname":"","identified":false'
+)
+
+ss_case_statistics_ipv6_neighbor_identity() (
+	set -eu
+	TMP="$(ss_spec_tmpdir)"
+	trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+	STATE="$TMP/state.tsv"
+	JSON="$TMP/statistics.json"
+	LEASES="$TMP/dhcp.leases"
+	ARP="$TMP/arp"
+	NEIGH="$TMP/ipv6-neigh"
+	FIRST_LOG="$TMP/first.log"
+	SECOND_LOG="$TMP/second.log"
+	: >"$LEASES"
+	printf '%s\n' 'IP address       HW type     Flags       HW address            Mask     Device' >"$ARP"
+	: >"$NEIGH"
+	cat >"$FIRST_LOG" <<'LOGS'
+daemon.info dnsmasq[1]: 20 2001:db8::100/50000 query[AAAA] one.example from 2001:db8::100
+LOGS
+
+	ss_statistics_awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v lease_file="$LEASES" \
+		-v arp_file="$ARP" \
+		-v ipv6_neigh_file="$NEIGH" \
+		-v generation_seed='generation-ipv6-neigh' \
+		-v fixed_now=1787950800 \
+		<"$FIRST_LOG"
+
+	ss_spec_assert_file_contains "$JSON" '"id":"ip:2001:db8::100","mac":"","ip":"2001:db8::100","hostname":"","identified":false,"queries":1,"blocked":0'
+
+	cat >"$NEIGH" <<'NEIGHBORS'
+2001:db8::100 dev br-lan lladdr aa:bb:cc:dd:ee:ff STALE
+2001:db8::200 dev br-lan lladdr aa:bb:cc:dd:ee:ff REACHABLE
+2001:db8::300 dev br-lan FAILED
+NEIGHBORS
+	cat >"$SECOND_LOG" <<'LOGS'
+daemon.info dnsmasq[1]: 21 2001:db8::200/50001 query[AAAA] two.example from 2001:db8::200
+daemon.info dnsmasq[1]: 22 2001:db8::300/50002 query[AAAA] unresolved.example from 2001:db8::300
+LOGS
+
+	ss_statistics_awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v lease_file="$LEASES" \
+		-v arp_file="$ARP" \
+		-v ipv6_neigh_command="cat $NEIGH" \
+		-v generation_seed='unused-new-generation' \
+		-v fixed_now=1787950861 \
+		<"$SECOND_LOG"
+
+	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":3,"blocked":0}'
+	ss_spec_assert_file_contains "$JSON" '"id":"aa:bb:cc:dd:ee:ff","mac":"aa:bb:cc:dd:ee:ff","ip":"2001:db8::200","hostname":"","identified":true,"queries":2,"blocked":0'
+	ss_spec_assert_file_contains "$JSON" '"id":"ip:2001:db8::300","mac":"","ip":"2001:db8::300","hostname":"","identified":false,"queries":1,"blocked":0'
+	! grep -F '"id":"ip:2001:db8::100"' "$JSON" >/dev/null
+	! grep -F '"id":"ip:2001:db8::200"' "$JSON" >/dev/null
+	! grep -F "$(printf 'device_bucket\tip:2001:db8::100\t')" "$STATE" >/dev/null
+)
+
+ss_case_statistics_modules() (
+	set -eu
+	STATISTICS_DIR="$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics"
+	STATSD="$SS_SPEC_ROOT/files/usr/libexec/safeshield-statsd"
+	for module in \
+		00-common.awk \
+		10-recovery.awk \
+		20-identity.awk \
+		30-aggregate.awk \
+		40-persistence.awk \
+		50-output.awk \
+		90-main.awk; do
+		[ -s "$STATISTICS_DIR/$module" ]
+		ss_spec_assert_file_contains "$STATSD" "-f \"\$SS_STATSD_AWK_DIR/$module\""
+	done
+	[ ! -e "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" ]
+	ss_spec_assert_file_contains "$SS_SPEC_ROOT/Makefile" '$(INSTALL_DATA) ./files/usr/lib/safeshield/statistics/*.awk $(1)/usr/lib/safeshield/statistics/'
 )

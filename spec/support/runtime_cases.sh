@@ -101,7 +101,11 @@ while IFS= read -r line; do
 	: "$line"
 done
 EOF_AWK
-	chmod 755 "$TMP/bin/logread" "$TMP/bin/awk"
+	cat >"$TMP/bin/ip" <<'EOF_IP'
+#!/bin/sh
+exit 0
+EOF_IP
+	chmod 755 "$TMP/bin/logread" "$TMP/bin/awk" "$TMP/bin/ip"
 	LOGREAD_PID_FILE="$TMP/logread.pid"
 	LOGREAD_ARGS_FILE="$TMP/logread.args"
 	AWK_PID_FILE="$TMP/awk.pid"
@@ -110,7 +114,7 @@ EOF_AWK
 	PATH="$TMP/bin:$PATH" \
 		SS_STATSD_FUNCTIONS_LIB="$TMP/functions.sh" \
 		SS_STATSD_CORE_LIB="$TMP/core.sh" \
-		SS_STATSD_AWK_PROGRAM="$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" \
+		SS_STATSD_AWK_DIR="$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics" \
 		SS_STATSD_GENERATION_ID='runtime-generation' \
 		SS_STATSD_PERSISTENT_STATE_FILE="$TMP/flash/statistics-state.tsv" \
 		SS_STATSD_PERSISTENT_JOURNAL_FILE="$TMP/flash/statistics-journal.tsv" \
@@ -133,6 +137,9 @@ dnsmasq'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'snapshot_interval=300'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'identity_cache_ttl=60'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'generation_seed=runtime-generation'
+	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'ipv6_neigh_command=ip -6 neigh show 2>/dev/null'
+	ss_spec_assert_file_line "$AWK_ARGS_FILE" "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/20-identity.awk"
+	ss_spec_assert_file_line "$AWK_ARGS_FILE" "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/90-main.awk"
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'persistent_state_file='
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'persistent_journal_file='
 	[ ! -e "$TMP/flash" ]

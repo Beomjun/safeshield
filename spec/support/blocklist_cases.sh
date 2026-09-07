@@ -227,9 +227,10 @@ shared.example'
 	ss_merge_sorted_api_sources block "$TMP/empty-blocks.txt"
 	[ ! -s "$TMP/empty-blocks.txt" ]
 	BLOCKLIST="$SS_SPEC_ROOT/files/usr/lib/safeshield/blocklist.sh"
-	STATISTICS="$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk"
+	STATISTICS_AGGREGATE="$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/30-aggregate.awk"
+	STATISTICS_OUTPUT="$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/50-output.awk"
 	ss_spec_assert_file_contains "$BLOCKLIST" 'sort -m -u "$@" >"$out"'
-	ss_spec_assert_file_contains "$STATISTICS" 'delete device_first_bucket[key]'
-	ss_spec_assert_file_contains "$STATISTICS" 'device_first_hour = device_first_bucket[key] + 0'
-	ss_spec_assert_file_contains "$STATISTICS" 'for (bucket = device_first_hour; bucket <= device_last_hour; bucket += 3600)'
+	ss_spec_assert_file_contains "$STATISTICS_AGGREGATE" 'delete device_first_bucket[key]'
+	ss_spec_assert_file_contains "$STATISTICS_OUTPUT" 'device_first_hour = device_first_bucket[key] + 0'
+	ss_spec_assert_file_contains "$STATISTICS_OUTPUT" 'for (bucket = device_first_hour; bucket <= device_last_hour; bucket += 3600)'
 )

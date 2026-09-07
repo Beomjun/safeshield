@@ -9,7 +9,7 @@ umask 077
 
 SS_STATSD_FUNCTIONS_LIB="${SS_STATSD_FUNCTIONS_LIB:-/lib/functions.sh}"
 SS_STATSD_CORE_LIB="${SS_STATSD_CORE_LIB:-/usr/lib/safeshield/core.sh}"
-SS_STATSD_AWK_PROGRAM="${SS_STATSD_AWK_PROGRAM:-/usr/lib/safeshield/statistics.awk}"
+SS_STATSD_AWK_DIR="${SS_STATSD_AWK_DIR:-/usr/lib/safeshield/statistics}"
 SS_STATSD_PERSISTENT_STATE_FILE="${SS_STATSD_PERSISTENT_STATE_FILE:-/etc/safeshield/statistics-state.tsv}"
 SS_STATSD_PERSISTENT_JOURNAL_FILE="${SS_STATSD_PERSISTENT_JOURNAL_FILE:-/etc/safeshield/statistics-journal.tsv}"
 SS_STATSD_PERSISTENT_INTERVAL_S="${SS_STATSD_PERSISTENT_INTERVAL_S:-3600}"
@@ -113,11 +113,14 @@ stats_run_collector() {
 	local lease_file="$3"
 	local persistent_state_file="$4"
 	local persistent_journal_file="$5"
-	local generation_id rc=0
+	local generation_id ipv6_neigh_command='' rc=0
 
-	# This is only a candidate for a brand-new dataset. statistics.awk keeps the
-	# generation restored from tmpfs or persistent state when one already exists.
+	# This is only a candidate for a brand-new dataset. The collector modules keep
+	# the generation restored from tmpfs or persistent state when one already exists.
 	generation_id="$(stats_new_generation_id)"
+	if command_exists ip; then
+		ipv6_neigh_command='ip -6 neigh show 2>/dev/null'
+	fi
 
 	stats_fifo="${SS_STATISTICS_DIR}/events.$$"
 	rm -f "$stats_fifo"
@@ -139,11 +142,18 @@ stats_run_collector() {
 		-v snapshot_interval="${snapshot_interval}" \
 		-v retention_hours="${retention_hours}" \
 		-v lease_file="${lease_file}" \
+		-v ipv6_neigh_command="${ipv6_neigh_command}" \
 		-v lease_refresh_interval=60 \
 		-v identity_cache_ttl=60 \
 		-v max_devices=128 \
 		-v generation_seed="${generation_id}" \
-		-f "$SS_STATSD_AWK_PROGRAM" \
+		-f "$SS_STATSD_AWK_DIR/00-common.awk" \
+		-f "$SS_STATSD_AWK_DIR/10-recovery.awk" \
+		-f "$SS_STATSD_AWK_DIR/20-identity.awk" \
+		-f "$SS_STATSD_AWK_DIR/30-aggregate.awk" \
+		-f "$SS_STATSD_AWK_DIR/40-persistence.awk" \
+		-f "$SS_STATSD_AWK_DIR/50-output.awk" \
+		-f "$SS_STATSD_AWK_DIR/90-main.awk" \
 		<"$stats_fifo" &
 	stats_awk_pid=$!
 

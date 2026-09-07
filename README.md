@@ -359,9 +359,14 @@ queries are excluded so SafeShield's own DNS health checks do not inflate user
 query or blocked counters. In addition to global hourly query/block counters,
 SafeShield keeps per-device totals and per-device hourly buckets locally. DHCP
 clients are identified by MAC address using the dnsmasq lease file, with the
-current IP and hostname included for the local UI. Clients that cannot be
-matched to a DHCP lease use a temporary IP-based identity. Device statistics
-are capped at 128 identities to bound memory use on low-end routers.
+current IP and hostname included for the local UI. IPv4 clients can also be
+resolved through the kernel ARP table, while IPv6 clients use the kernel NDP
+neighbor cache (`ip -6 neigh show`). This lets multiple IPv6 privacy/temporary
+addresses from the same LAN client converge on one MAC identity and migrates
+any earlier `ip:<address>` hourly buckets when the neighbor entry becomes
+available. Clients that still cannot be resolved use a temporary IP-based
+identity. Device statistics are capped at 128 identities to bound memory use
+on low-end routers.
 
 Each retained statistics dataset has a stable `generation_id`. `started_at` is
 the creation time of that retained dataset and is restored together with the
@@ -369,6 +374,12 @@ generation when the collector restarts. `session_started_at` is the start time
 of the current collector process and therefore changes on every collector
 restart. This distinction lets cloud ingestion upsert repeated snapshots from
 the same generation without treating a process restart as a new dataset.
+
+The collector implementation is split into focused AWK modules under
+`/usr/lib/safeshield/statistics/` for common helpers, recovery, client identity,
+aggregation, persistence, output, and the collector lifecycle. `safeshield-statsd`
+loads the modules together as one AWK program, preserving the single collector
+process used on resource-constrained routers.
 
 Hot statistics live under `/tmp/safeshield/statistics/` and are retained for up
 to 168 hourly buckets. Supported profiles additionally persist aggregate state

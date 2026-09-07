@@ -49,4 +49,18 @@ Describe 'SafeShield statistics behavior'
 		The output should equal ''
 		The error should equal ''
 	End
+	It 'merges IPv6 privacy addresses through the kernel neighbor identity'
+		When call ss_case_statistics_ipv6_neighbor_identity
+		The status should be success
+		The output should equal ''
+		The error should equal ''
+	End
+
+	It 'loads the statistics collector from focused awk modules'
+		When call ss_case_statistics_modules
+		The status should be success
+		The output should equal ''
+		The error should equal ''
+	End
+
 End
