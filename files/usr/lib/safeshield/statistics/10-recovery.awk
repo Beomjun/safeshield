@@ -82,6 +82,26 @@ function load_state_file(path,    line, fields, count, bucket, key, mac, ip, hos
 			}
 			loaded_state = 1
 		}
+		else if (count >= 8 && fields[1] == "source") {
+			source_instance_id = decode_state_field(fields[2])
+			source_transport_scope = decode_state_field(fields[3])
+			source_client_capacity = numeric(fields[4], 0)
+			source_tracked_clients = numeric(fields[5], 0)
+			source_untracked_queries = numeric(fields[6], 0)
+			source_total_queries = numeric(fields[7], 0)
+			source_total_blocked = numeric(fields[8], 0)
+			source_available = (count >= 9 && numeric(fields[9], 0)) ? 1 : 0
+			source_error_count = (count >= 10) ? numeric(fields[10], 0) : 0
+			source_last_error_at = (count >= 11) ? numeric(fields[11], 0) : 0
+			source_initialized = (source_instance_id != "") ? 1 : 0
+		}
+		else if (count >= 4 && fields[1] == "source_client") {
+			key = decode_state_field(fields[2])
+			if (key != "") {
+				source_client_queries[key] = numeric(fields[3], 0)
+				source_client_blocked[key] = numeric(fields[4], 0)
+			}
+		}
 		else if (count >= 4 && fields[1] == "bucket") {
 			bucket = numeric(fields[2], 0)
 			if (bucket > 0) {

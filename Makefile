@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
 PKG_VERSION:=0.3.20
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -40,7 +40,7 @@ define Package/safeshield
 	+ucode-mod-fs \
 	+ucode-mod-ubus \
 	+ucode-mod-uci
-  EXTRA_DEPENDS:=dnsmasq (>=2.80)
+  EXTRA_DEPENDS:=dnsmasq (>=2.93)
   PKGARCH:=all
 endef
 
@@ -65,6 +65,7 @@ define Package/safeshield/install
 	$(INSTALL_DIR) $(1)/usr/libexec
 	$(INSTALL_BIN) ./files/usr/libexec/safeshield-refreshd $(1)/usr/libexec/safeshield-refreshd
 	$(INSTALL_BIN) ./files/usr/libexec/safeshield-statsd $(1)/usr/libexec/safeshield-statsd
+	$(INSTALL_BIN) ./files/usr/libexec/safeshield-stats-poll $(1)/usr/libexec/safeshield-stats-poll
 
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/safeshield $(1)/etc/config/safeshield

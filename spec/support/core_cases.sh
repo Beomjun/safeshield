@@ -142,26 +142,39 @@ ss_case_dnsmasq_version() (
 
 	make_dnsmasq() {
 		version="$1"
+		feature_rc="${2:-0}"
 		cat >"$TMP_DIR/dnsmasq" <<SCRIPT
 #!/bin/sh
-printf '%s\\n' 'Dnsmasq version ${version} Copyright (c) 2000-2026 Simon Kelley'
+case "\${1:-}" in
+	--version)
+		printf '%s\n' 'Dnsmasq version ${version} Copyright (c) 2000-2026 Simon Kelley'
+		exit 0
+		;;
+	--test)
+		exit ${feature_rc}
+		;;
+esac
+exit 0
 SCRIPT
 		chmod +x "$TMP_DIR/dnsmasq"
 	}
 
 	PATH="$TMP_DIR:$PATH"
 	export PATH
-	make_dnsmasq '2.80'
-	ss_spec_assert_eq "$(ss_dnsmasq_version)" '2.80'
+	make_dnsmasq '2.93'
+	ss_spec_assert_eq "$(ss_dnsmasq_version)" '2.93'
 	ss_require_supported_dnsmasq
-	make_dnsmasq '2.90'
+	make_dnsmasq '2.94'
 	ss_require_supported_dnsmasq
-	make_dnsmasq '2.80rc1'
-	ss_spec_assert_eq "$(ss_dnsmasq_version)" '2.80'
+	make_dnsmasq '2.93rc1'
+	ss_spec_assert_eq "$(ss_dnsmasq_version)" '2.93'
 	ss_require_supported_dnsmasq
-	make_dnsmasq '2.79'
+	make_dnsmasq '2.92'
 	! ss_require_supported_dnsmasq
 	ss_spec_assert_eq "$(ss_dnsmasq_check_error)" 'dnsmasq_version_unsupported'
+	make_dnsmasq '2.93' 1
+	! ss_require_supported_dnsmasq
+	ss_spec_assert_eq "$(ss_dnsmasq_check_error)" 'dnsmasq_smartsafehub_patch_required'
 	cat >"$TMP_DIR/dnsmasq" <<'SCRIPT'
 #!/bin/sh
 printf '%s\n' 'unexpected version output'

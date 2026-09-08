@@ -1,0 +1,65 @@
+#!/usr/bin/ucode
+'use strict';
+
+let ubus = require('ubus').connect();
+
+function token(value) {
+    let text = sprintf('%s', value == null ? '' : value);
+    return replace(text, /[\t\r\n]/g, '');
+}
+
+function uint(value) {
+    let number = int(value == null ? 0 : value);
+    return (type(number) == 'int' && number >= 0) ? number : 0;
+}
+
+if (!ubus) {
+    exit(1);
+}
+
+let data = ubus.call('dnsmasq', 'smartsafehub_stats', {});
+if (type(data) != 'object') {
+    exit(1);
+}
+
+let instance_id = token(data.instance_id);
+if (!instance_id) {
+    exit(1);
+}
+
+let transport_scope = token(data.transport_scope || 'unknown');
+let client_capacity = uint(data.client_capacity);
+let tracked_clients = uint(data.tracked_clients);
+let untracked_queries = uint(data.untracked_queries);
+let totals = (type(data.totals) == 'object') ? data.totals : {};
+let total_queries = uint(totals.queries);
+let total_blocked = uint(totals.blocked);
+let clients = (type(data.clients) == 'array') ? data.clients : [];
+
+printf('snapshot\t%s\t%s\t%d\t%d\t%d\t%d\t%d\n',
+    instance_id,
+    transport_scope,
+    client_capacity,
+    tracked_clients,
+    untracked_queries,
+    total_queries,
+    total_blocked);
+
+for (let client in clients) {
+    if (type(client) != 'object') {
+        continue;
+    }
+
+    let address = token(client.address);
+    if (!address) {
+        continue;
+    }
+
+    printf('client\t%s\t%d\t%d\n',
+        address,
+        uint(client.queries),
+        uint(client.blocked));
+}
+
+print('commit\n');
+exit(0);

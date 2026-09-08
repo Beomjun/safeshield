@@ -10,6 +10,7 @@ umask 077
 SS_STATSD_FUNCTIONS_LIB="${SS_STATSD_FUNCTIONS_LIB:-/lib/functions.sh}"
 SS_STATSD_CORE_LIB="${SS_STATSD_CORE_LIB:-/usr/lib/safeshield/core.sh}"
 SS_STATSD_AWK_DIR="${SS_STATSD_AWK_DIR:-/usr/lib/safeshield/statistics}"
+SS_STATSD_POLL_COMMAND="${SS_STATSD_POLL_COMMAND:-/usr/libexec/safeshield-stats-poll}"
 SS_STATSD_PERSISTENT_STATE_FILE="${SS_STATSD_PERSISTENT_STATE_FILE:-/etc/safeshield/statistics-state.tsv}"
 SS_STATSD_PERSISTENT_JOURNAL_FILE="${SS_STATSD_PERSISTENT_JOURNAL_FILE:-/etc/safeshield/statistics-journal.tsv}"
 SS_STATSD_PERSISTENT_INTERVAL_S="${SS_STATSD_PERSISTENT_INTERVAL_S:-3600}"
@@ -20,7 +21,7 @@ SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S="${SS_STATSD_PERSISTENT_COMPACT_INTERVAL
 # shellcheck disable=SC1090
 . "$SS_STATSD_CORE_LIB"
 
-stats_logread_pid=''
+stats_poller_pid=''
 stats_awk_pid=''
 stats_fifo=''
 stats_lock_dir=''
@@ -54,14 +55,14 @@ stats_process_running() {
 stats_cleanup() {
 	trap - EXIT HUP INT TERM
 
-	# Stop the FIFO writer first. awk then receives EOF and runs its END block,
-	# which performs the final snapshot and persistent checkpoint when enabled.
-	if stats_process_running "$stats_logread_pid"; then
-		kill "$stats_logread_pid" 2>/dev/null || true
+	# Stop the low-frequency UBus poller first. awk then receives EOF and runs
+	# its END block, which performs the final snapshot and persistence flush.
+	if stats_process_running "$stats_poller_pid"; then
+		kill "$stats_poller_pid" 2>/dev/null || true
 	fi
 
-	[ -n "$stats_logread_pid" ] && wait "$stats_logread_pid" 2>/dev/null || true
-	stats_logread_pid=''
+	[ -n "$stats_poller_pid" ] && wait "$stats_poller_pid" 2>/dev/null || true
+	stats_poller_pid=''
 
 	[ -n "$stats_awk_pid" ] && wait "$stats_awk_pid" 2>/dev/null || true
 	stats_awk_pid=''
@@ -107,6 +108,25 @@ stats_acquire_lock() {
 	return 0
 }
 
+stats_poll_loop() {
+	local snapshot_interval="$1"
+	local poll_command="$2"
+	local sleep_pid=''
+
+	trap 'if [ -n "$sleep_pid" ]; then kill "$sleep_pid" 2>/dev/null || true; fi; exit 0' HUP INT TERM
+
+	while :; do
+		if ! "$poll_command"; then
+			printf 'error\tdnsmasq_ubus_poll_failed\n'
+		fi
+
+		sleep "$snapshot_interval" &
+		sleep_pid=$!
+		wait "$sleep_pid" 2>/dev/null || true
+		sleep_pid=''
+	done
+}
+
 stats_run_collector() {
 	local snapshot_interval="$1"
 	local retention_hours="$2"
@@ -129,8 +149,8 @@ stats_run_collector() {
 		return 1
 	}
 
-	logread -f -l 0 -e dnsmasq >"$stats_fifo" &
-	stats_logread_pid=$!
+	stats_poll_loop "$snapshot_interval" "$SS_STATSD_POLL_COMMAND" >"$stats_fifo" &
+	stats_poller_pid=$!
 
 	awk \
 		-v state_file="${SS_STATISTICS_STATE_FILE}" \
@@ -160,11 +180,11 @@ stats_run_collector() {
 	wait "$stats_awk_pid" || rc=$?
 	stats_awk_pid=''
 
-	if stats_process_running "$stats_logread_pid"; then
-		kill "$stats_logread_pid" 2>/dev/null || true
+	if stats_process_running "$stats_poller_pid"; then
+		kill "$stats_poller_pid" 2>/dev/null || true
 	fi
-	wait "$stats_logread_pid" 2>/dev/null || true
-	stats_logread_pid=''
+	wait "$stats_poller_pid" 2>/dev/null || true
+	stats_poller_pid=''
 
 	return "$rc"
 }
@@ -177,8 +197,8 @@ main() {
 	[ "${ss_enabled}" = "1" ] || return 0
 	[ "${ss_statistics_enabled}" = "1" ] || return 0
 
-	command_exists logread || {
-		log_error 'logread is required for SafeShield statistics'
+	[ -x "$SS_STATSD_POLL_COMMAND" ] || {
+		log_error "SafeShield statistics poll command is unavailable: ${SS_STATSD_POLL_COMMAND}"
 		return 1
 	}
 	command_exists mkfifo || {
@@ -218,7 +238,7 @@ main() {
 		[ -n "$configured_lease_file" ] && lease_file="$configured_lease_file"
 	fi
 
-	log_info "Starting statistics collector (snapshot=${snapshot_interval}s configured_snapshot=${configured_snapshot_interval}s retention=${retention_hours}h persistence=${persistence_mode} journal=${SS_STATSD_PERSISTENT_INTERVAL_S}s compact=${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S}s)"
+	log_info "Starting statistics collector (source=dnsmasq-ubus snapshot=${snapshot_interval}s configured_snapshot=${configured_snapshot_interval}s retention=${retention_hours}h persistence=${persistence_mode} journal=${SS_STATSD_PERSISTENT_INTERVAL_S}s compact=${SS_STATSD_PERSISTENT_COMPACT_INTERVAL_S}s)"
 
 	stats_run_collector \
 		"$snapshot_interval" \

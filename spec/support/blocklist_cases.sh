@@ -28,10 +28,12 @@ ss_case_blocklist_format() (
 	normalized="$(printf '%s\n' \
 		'address=/ads.example/#' \
 		'address=/legacy-v4.example/0.0.0.0' \
-		'address=/legacy-v6.example/::' | ss_normalize_domains)"
+		'address=/legacy-v6.example/::' \
+		'smartsafehub-block=/native.example/' | ss_normalize_domains)"
 	expected='ads.example
 legacy-v4.example
-legacy-v6.example'
+legacy-v6.example
+native.example'
 	ss_spec_assert_eq "$normalized" "$expected"
 
 	cat >"$SS_TMP_DIR/api.0.block.txt" <<'DATA'
@@ -55,9 +57,9 @@ DATA
 local-block.example
 DATA
 	ss_merge_lists
-	expected='address=/ads.example/#
-address=/phishing.example/#
-address=/remote-allow.example/#
+	expected='smartsafehub-block=/ads.example/
+smartsafehub-block=/phishing.example/
+smartsafehub-block=/remote-allow.example/
 server=/local-block.example/#
 server=/tracker.example/#'
 	ss_spec_assert_eq "$(cat "$SS_BLOCKLIST_FILE")" "$expected"
@@ -71,10 +73,21 @@ server=/tracker.example/#'
 	printf '%s\n' 'blocked.good.example.com' >"$SS_TMP_DIR/local.block.txt"
 	printf '%s\n' 'allowed.blocked.good.example.com' >"$SS_TMP_DIR/local.allow.txt"
 	ss_merge_lists
-	expected='address=/blocked.good.example.com/#
-address=/example.com/#
+	expected='smartsafehub-block=/blocked.good.example.com/
+smartsafehub-block=/example.com/
 server=/allowed.blocked.good.example.com/#
 server=/good.example.com/#'
+	ss_spec_assert_eq "$(cat "$SS_BLOCKLIST_FILE")" "$expected"
+
+	cat >"$SS_BLOCKLIST_FILE" <<'DATA'
+address=/migrate-one.example/#
+address=/migrate-two.example/0.0.0.0
+server=/allowed.example/#
+DATA
+	ss_migrate_blocklist_file_to_smartsafehub "$SS_BLOCKLIST_FILE"
+	expected='smartsafehub-block=/migrate-one.example/
+smartsafehub-block=/migrate-two.example/
+server=/allowed.example/#'
 	ss_spec_assert_eq "$(cat "$SS_BLOCKLIST_FILE")" "$expected"
 
 	cat >"$SS_BLOCKLIST_FILE" <<'DATA'

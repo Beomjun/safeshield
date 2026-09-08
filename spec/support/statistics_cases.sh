@@ -26,24 +26,23 @@ ss_case_statistics() (
 	ss_spec_assert_eq "$(ss_statistics_effective_snapshot_interval 60)" '60'
 	ss_spec_assert_eq "$(ss_statistics_effective_snapshot_interval 120)" '120'
 	ss_statistics_persistence_enabled
+	cat >"$SS_STATISTICS_DNSMASQ_CONF" <<'CONFIG'
+# Legacy SafeShield statistics logging
+log-queries=extra
+log-async=25
+CONFIG
 	changed="$(ss_statistics_configure_dnsmasq 1)"
 	ss_spec_assert_eq "$changed" '1'
-	ss_spec_assert_file_line "$SS_STATISTICS_DNSMASQ_CONF" 'log-queries=extra'
-	ss_spec_assert_file_line "$SS_STATISTICS_DNSMASQ_CONF" 'log-async=25'
+	[ ! -e "$SS_STATISTICS_DNSMASQ_CONF" ]
 	ss_spec_assert_eq "$(ss_statistics_configure_dnsmasq 1)" '0'
 	SS_IDENTITY_PROFILE='gl_mt300n_v2'
 	export SS_IDENTITY_PROFILE
 	ss_spec_assert_eq "$(ss_statistics_effective_snapshot_interval 60)" '300'
 	ss_spec_assert_eq "$(ss_statistics_effective_snapshot_interval 120)" '120'
 	! ss_statistics_persistence_enabled
-	ss_spec_assert_eq "$(ss_statistics_configure_dnsmasq 1)" '1'
-	ss_spec_assert_file_line "$SS_STATISTICS_DNSMASQ_CONF" 'log-async=50'
-	ss_spec_assert_eq "$(ss_statistics_configure_dnsmasq 1)" '0'
 	SS_IDENTITY_PROFILE=''
 	export SS_IDENTITY_PROFILE
 	ss_statistics_persistence_enabled
-	ss_spec_assert_eq "$(ss_statistics_configure_dnsmasq 0)" '1'
-	[ ! -e "$SS_STATISTICS_DNSMASQ_CONF" ]
 
 	STATE="$TMP/state.tsv"
 	JSON="$TMP/statistics.json"
@@ -156,6 +155,82 @@ EOF_MV
 		-v fixed_now=1787954400 \
 		<"$DIRTY_LOG"
 	ss_spec_assert_eq "$(wc -l <"$MV_COUNT_FILE" | tr -d '[:space:]')" '2'
+)
+
+ss_case_statistics_ubus_source() (
+	set -eu
+	TMP="$(ss_spec_tmpdir)"
+	trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+	STATE="$TMP/state.tsv"
+	JSON="$TMP/statistics.json"
+	LEASES="$TMP/dhcp.leases"
+	INPUT="$TMP/source.tsv"
+	printf '%s\n' '1788000000 aa:bb:cc:dd:ee:ff 192.168.1.20 iphone *' >"$LEASES"
+
+	cat >"$INPUT" <<'DATA'
+snapshot	epoch-1	udp	128	2	0	10	2
+client	192.168.1.20	6	2
+client	127.0.0.1	1	0
+commit
+DATA
+	ss_statistics_awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v lease_file="$LEASES" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v fixed_now=1787950800 \
+		<"$INPUT"
+	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":0,"blocked":0}'
+	ss_spec_assert_file_contains "$JSON" '"source":{"backend":"dnsmasq_ubus","available":true,"instance_id":"epoch-1","transport_scope":"udp","client_capacity":128,"tracked_clients":2,"untracked_queries":0'
+	ss_spec_assert_file_contains "$STATE" "$(printf 'source	epoch-1	udp	128	2	0	10	2')"
+
+	cat >"$INPUT" <<'DATA'
+snapshot	epoch-1	udp	128	2	1	14	3
+client	192.168.1.20	9	3
+client	127.0.0.1	2	0
+commit
+DATA
+	ss_statistics_awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v lease_file="$LEASES" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v fixed_now=1787950860 \
+		<"$INPUT"
+	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":3,"blocked":1}'
+	ss_spec_assert_file_contains "$JSON" '"id":"aa:bb:cc:dd:ee:ff","mac":"aa:bb:cc:dd:ee:ff","ip":"192.168.1.20","hostname":"iphone","identified":true,"queries":3,"blocked":1'
+	! grep -F '"ip":"127.0.0.1"' "$JSON" >/dev/null
+
+	cat >"$INPUT" <<'DATA'
+snapshot	epoch-2	udp	128	1	0	2	1
+client	192.168.1.20	2	1
+commit
+DATA
+	ss_statistics_awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v lease_file="$LEASES" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v fixed_now=1787950920 \
+		<"$INPUT"
+	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":5,"blocked":2}'
+	ss_spec_assert_file_contains "$JSON" '"instance_id":"epoch-2"'
+	ss_spec_assert_file_contains "$JSON" '"queries":5,"blocked":2'
+
+	printf '%s\n' 'error	dnsmasq_ubus_poll_failed' >"$INPUT"
+	ss_statistics_awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v lease_file="$LEASES" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v fixed_now=1787950980 \
+		<"$INPUT"
+	ss_spec_assert_file_contains "$JSON" '"source":{"backend":"dnsmasq_ubus","available":false,"instance_id":"epoch-2"'
+	ss_spec_assert_file_contains "$JSON" '"poll_error_count":1'
 )
 
 ss_case_statistics_persistence() (
@@ -695,6 +770,7 @@ ss_case_statistics_modules() (
 	set -eu
 	STATISTICS_DIR="$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics"
 	STATSD="$SS_SPEC_ROOT/files/usr/libexec/safeshield-statsd"
+	POLL_HELPER="$SS_SPEC_ROOT/files/usr/libexec/safeshield-stats-poll"
 	for module in \
 		00-common.awk \
 		10-recovery.awk \
@@ -707,5 +783,9 @@ ss_case_statistics_modules() (
 		ss_spec_assert_file_contains "$STATSD" "-f \"\$SS_STATSD_AWK_DIR/$module\""
 	done
 	[ ! -e "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" ]
+	[ -x "$POLL_HELPER" ]
+	ss_spec_assert_file_contains "$POLL_HELPER" "ubus.call('dnsmasq', 'smartsafehub_stats', {})"
+	ss_spec_assert_file_contains "$STATSD" 'SS_STATSD_POLL_COMMAND'
+	ss_spec_assert_file_contains "$SS_SPEC_ROOT/Makefile" '$(INSTALL_BIN) ./files/usr/libexec/safeshield-stats-poll $(1)/usr/libexec/safeshield-stats-poll'
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/Makefile" '$(INSTALL_DATA) ./files/usr/lib/safeshield/statistics/*.awk $(1)/usr/lib/safeshield/statistics/'
 )

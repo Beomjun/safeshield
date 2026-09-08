@@ -195,10 +195,11 @@ function build_status() {
     let installation_id = data.installation_id || cfg_installation_id || '';
     let device_profile = data.device_profile || '';
     let dnsmasq_version = data.dnsmasq_version || '';
-    let dnsmasq_min_version = data.dnsmasq_min_version || '2.80';
+    let dnsmasq_min_version = data.dnsmasq_min_version || '2.93';
 
     let health_dnsmasq_binary = to_bool(data.health_dnsmasq_binary || '0', false);
     let health_dnsmasq_version = to_bool(data.health_dnsmasq_version || '0', false);
+    let health_dnsmasq_features = to_bool(data.health_dnsmasq_features || '0', false);
     let health_dnsmasq_confdir = to_bool(data.health_dnsmasq_confdir || '0', false);
     let health_dnsmasq_initial_restart = to_optional_bool(data.health_dnsmasq_initial_restart);
     let health_dnsmasq_final_restart = to_bool(data.health_dnsmasq_final_restart || '0', false);
@@ -323,6 +324,7 @@ function build_status() {
                 artifact_sha256: health_artifact_sha256,
                 dnsmasq_binary: health_dnsmasq_binary,
                 dnsmasq_version: health_dnsmasq_version,
+                dnsmasq_features: health_dnsmasq_features,
                 dnsmasq_confdir: health_dnsmasq_confdir,
                 dnsmasq_initial_restart: health_dnsmasq_initial_restart,
                 dnsmasq_final_restart: health_dnsmasq_final_restart,

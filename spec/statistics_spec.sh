@@ -8,6 +8,13 @@ Describe 'SafeShield statistics behavior'
 		The error should equal ''
 	End
 
+	It 'calculates deltas from dnsmasq cumulative UBus counters'
+		When call ss_case_statistics_ubus_source
+		The status should be success
+		The output should equal ''
+		The error should equal ''
+	End
+
 	It 'restores persistent state and handles volatile mode metadata'
 		When call ss_case_statistics_persistence
 		The status should be success

@@ -12,6 +12,17 @@ let data = {
     started_at: '100',
     updated_at: '200',
     totals: { queries: '120', blocked: '12' },
+    source: {
+        backend: 'dnsmasq_ubus',
+        available: '1',
+        instance_id: 'epoch-test',
+        transport_scope: 'udp',
+        client_capacity: '128',
+        tracked_clients: '2',
+        untracked_queries: '3',
+        poll_error_count: '4',
+        last_error_at: '199'
+    },
     hourly: [
         { bucket_start: '10', queries: '20', blocked: '2' },
         'invalid',
@@ -43,7 +54,7 @@ function to_int(v, def) {
 return {
     PKG_NAME: 'safeshield',
     STATISTICS_SCHEMA_NAME: 'safeshield.statistics',
-    STATISTICS_SCHEMA_VERSION: 1,
+    STATISTICS_SCHEMA_VERSION: 2,
     STATISTICS_FILE: '/tmp/statistics.json',
     data: data,
     reload_uci: function() { return true; },

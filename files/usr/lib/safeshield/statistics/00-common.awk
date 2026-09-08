@@ -2,8 +2,9 @@
 # Loaded together with the other statistics/*.awk modules by safeshield-statsd.
 
 # SafeShield dnsmasq statistics collector.
-# Input is the live logread stream. Only aggregate counters and local device
-# counters are retained. Raw queried domains are never persisted.
+# Production input is a low-frequency snapshot stream generated from dnsmasq
+# cumulative UBus counters. Legacy log fixtures remain accepted for regression
+# coverage. Raw queried domains are never persisted.
 
 function numeric(value, fallback) {
 	if (value ~ /^[0-9]+$/) {

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.20-r2] - 2026-09-09
+
+### Changed
+
+- Replace per-query dnsmasq log ingestion with low-frequency polling of the SmartSafeHub cumulative UBus statistics source.
+- Emit SafeShield block rules with `smartsafehub-block=/domain/` so only SafeShield-owned rules increment the blocked counter.
+- Preserve the existing statistics retention, per-device identity, journal persistence, and `generation_id` model while tracking dnsmasq `instance_id` counter epochs.
+- Require dnsmasq 2.93 with the SmartSafeHub block-accounting extension, matching the OpenWrt 25.12 baseline.
+
+### Added
+
+- Add `/usr/libexec/safeshield-stats-poll`, a one-shot ucode helper for `dnsmasq.smartsafehub_stats`.
+- Expose statistics source availability, `instance_id`, transport scope, client capacity, tracked clients, untracked queries, and poll errors through the local statistics JSON/RPC.
+- Persist the last dnsmasq cumulative counter baseline in collector state (and the persistent base snapshot where enabled) so collector restarts do not double-count an unchanged dnsmasq instance.
+
+### Fixed
+
+- Remove the high-frequency `logread -f`/AWK event path and managed `log-queries`/`log-async` configuration that could contribute to latency spikes on resource-constrained routers.
+- Continue excluding loopback health-check traffic by subtracting loopback client counter deltas from global statistics.
+- Migrate an already-installed legacy `address=/domain/#` SafeShield blocklist to the SmartSafeHub directive during service startup.
+
 ## [0.3.20-r1] - 2026-09-08
 
 - Bump version for release.

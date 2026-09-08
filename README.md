@@ -83,7 +83,7 @@ the Hub artifacts separate while preserving override precedence as `local allow`
 SafeShield requires the following environment:
 
 - **OpenWrt 25.12 or later**
-- **dnsmasq 2.80 or later** (required for the optimized `address=/domain/#` block rules)
+- **dnsmasq 2.93 or later with the SmartSafeHub statistics patch** (required for the SmartSafeHub `smartsafehub-block=/domain/` block rules)
 - At least **16 MB free flash storage**
 - Internet access for downloading blocklists
 
@@ -384,9 +384,11 @@ process used on resource-constrained routers.
 Hot statistics live under `/tmp/safeshield/statistics/` and are retained for up
 to 168 hourly buckets. Supported profiles additionally persist aggregate state
 with a compact base snapshot plus hourly journal, while constrained profiles
-may stay tmpfs-only. The collector starts `logread` in follow-only mode, so
-existing system log entries are not counted a second time when the service
-restarts.
+may stay tmpfs-only. The collector no longer follows dnsmasq query logs. It
+polls dnsmasq's cumulative SmartSafeHub UBus counters at the effective snapshot
+interval and calculates deltas in RAM. `instance_id` identifies the current
+dnsmasq counter epoch so a dnsmasq restart can be distinguished from a normal
+counter increment.
 
 The default statistics settings are:
 
@@ -396,18 +398,20 @@ statistics_snapshot_interval_s=60
 statistics_retention_hours=168
 ```
 
-When statistics are enabled, SafeShield adds `log-queries=extra` and
-`log-async=25` to its managed dnsmasq configuration. The `extra` mode provides
-the requestor address needed to attribute block responses to local devices.
-Disabling statistics removes those settings and stops the collector. dnsmasq
-query messages still pass through the normal in-memory OpenWrt system log while
-collection is enabled; SafeShield persists aggregate counters only, never raw
-DNS query names.
+When statistics are enabled, SafeShield calls `ubus call dnsmasq
+smartsafehub_stats` through a small ucode poll helper. No `log-queries` or
+`log-async` setting is required, and disabling statistics only stops the
+collector. Existing pre-0.3.20-r2 statistics logging configuration is removed
+once during upgrade. SafeShield persists aggregate counters only; raw DNS query
+names are never collected.
 
-The blocked counter tracks dnsmasq null-address (`0.0.0.0` / `::`) responses.
-On SmartSafeHub images these responses are expected to come from SafeShield.
-If another package installs additional null-address dnsmasq rules, those hits
-are included in the aggregate blocked count as well.
+SafeShield emits block rules as `smartsafehub-block=/domain/`. This directive
+has the same blocking role as the previous null-address rule, but only these
+SafeShield-owned rules increment dnsmasq's SmartSafeHub blocked counter. The
+statistics source also exposes dnsmasq's `instance_id`, `transport_scope`,
+client-table capacity, tracked-client count, and untracked-query count. The
+OpenWrt 25.12 dnsmasq PoC currently reports `transport_scope=udp`; exact TCP
+accounting requires the corresponding dnsmasq parent-process accounting work.
 
 Update writable configuration values. `enabled` and `license_key` are
 intentionally excluded and have dedicated methods:

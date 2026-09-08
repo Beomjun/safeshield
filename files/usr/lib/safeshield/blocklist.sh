@@ -28,6 +28,7 @@ ss_normalize_domains() {
 		-e 's/^127\.0\.0\.1[[:space:]][[:space:]]*//' \
 		-e 's#^local=/##' \
 		-e 's#^address=/##' \
+		-e 's#^smartsafehub-block=/##' \
 		-e 's#/0\.0\.0\.0$##' \
 		-e 's#/::$##' \
 		-e 's|/#$||' \
@@ -902,7 +903,7 @@ ss_merge_lists() {
 	}
 
 	if [ -s "$final_blocks" ]; then
-		awk '{ print "address=/" $0 "/#" }' "$final_blocks" >"$final" || {
+		awk '{ print "smartsafehub-block=/" $0 "/" }' "$final_blocks" >"$final" || {
 			rm -f "$final"
 			return 1
 		}
@@ -970,6 +971,36 @@ ss_merge_lists() {
 	ss_status_set blocklist_installed "1"
 }
 
+ss_migrate_blocklist_file_to_smartsafehub() {
+	local path="$1"
+	local tmp="${path}.smartsafehub.$$"
+
+	[ -f "$path" ] || return 0
+	grep -Eq '^address=/[^/]+/(#|0\.0\.0\.0|::)$' "$path" || return 0
+
+	awk -F'/' '
+        $1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::") {
+            print "smartsafehub-block=/" $2 "/"
+            next
+        }
+        { print }
+    ' "$path" >"$tmp" || {
+		rm -f "$tmp"
+		return 1
+	}
+
+	mv -f "$tmp" "$path" || {
+		rm -f "$tmp"
+		return 1
+	}
+	return 0
+}
+
+ss_migrate_installed_blocklists_to_smartsafehub() {
+	ss_migrate_blocklist_file_to_smartsafehub "${SS_BLOCKLIST_FILE}" || return 1
+	ss_migrate_blocklist_file_to_smartsafehub "${SS_INACTIVE_BLOCKLIST_FILE}" || return 1
+}
+
 ss_install_blocklist() {
 	if [ "${ss_compress_blocklist}" = "1" ]; then
 		log_warn "compress_blocklist=1 is not implemented in this revision, using uncompressed blocklist"
@@ -986,7 +1017,8 @@ find_test_domains() {
 	[ "$limit" -gt 0 ] 2>/dev/null || return 0
 
 	awk -F'/' -v limit="$limit" '
-        $1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::") {
+        ($1 == "smartsafehub-block=" && $3 == "") ||
+        ($1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::")) {
             if (!seen[$2]++) {
                 print $2
                 found++
@@ -1005,7 +1037,8 @@ check_blocklist_rule_present() {
 	[ -f "${SS_BLOCKLIST_FILE}" ] || return 1
 
 	awk -F'/' -v d="$domain" '
-        $1 == "address=" && $2 == d && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::") {
+        (($1 == "smartsafehub-block=" && $3 == "") ||
+         ($1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::"))) && $2 == d {
             found = 1
             exit
         }
@@ -1020,8 +1053,8 @@ check_domain_blocked() {
 
 	[ -n "$domain" ] || return 1
 
-	nslookup "$domain" 127.0.0.1 2>/dev/null |
-		grep -Eq '^Address: *(0\.0\.0\.0|::)$'
+	nslookup "$domain" 127.0.0.1 2>&1 |
+		grep -Eq '(^Address: *(0\.0\.0\.0|::)$|NXDOMAIN)'
 }
 
 check_blocklist_applied_for_domain() {

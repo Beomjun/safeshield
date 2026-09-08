@@ -3,6 +3,8 @@
 # Paths are defined by core.sh before these helpers are called.
 # shellcheck disable=SC2154
 
+SS_STATISTICS_POLL_COMMAND="${SS_STATISTICS_POLL_COMMAND:-/usr/libexec/safeshield-stats-poll}"
+
 ss_statistics_profile_code() {
 	local board=""
 	local profile=""
@@ -21,17 +23,6 @@ ss_statistics_profile_code() {
 	esac
 	[ -n "$profile" ] || profile="unknown"
 	printf '%s\n' "$profile"
-}
-
-ss_statistics_log_async_lines() {
-	case "$(ss_statistics_profile_code)" in
-		gl_mt300n_v2)
-			printf '%s\n' '50'
-			;;
-		*)
-			printf '%s\n' '25'
-			;;
-	esac
 }
 
 ss_statistics_effective_snapshot_interval() {
@@ -55,45 +46,24 @@ ss_statistics_persistence_enabled() {
 	esac
 }
 
-ss_statistics_configure_dnsmasq() {
-	local enabled="${1:-0}"
-	local log_async_lines=""
-	local tmp="${SS_STATISTICS_DNSMASQ_CONF}.tmp.$$"
-
-	mkdir -p "${SS_DNSMASQ_DIR}" || return 1
-
-	if [ "$enabled" != "1" ]; then
-		if [ -f "${SS_STATISTICS_DNSMASQ_CONF}" ]; then
-			rm -f "${SS_STATISTICS_DNSMASQ_CONF}" || return 1
-			printf '%s\n' '1'
-		else
-			printf '%s\n' '0'
-		fi
-		return 0
-	fi
-
-	log_async_lines="$(ss_statistics_log_async_lines)"
-	{
-		printf '%s\n' '# Managed by SafeShield. Do not edit.'
-		printf '%s\n' 'log-queries=extra'
-		printf 'log-async=%s\n' "$log_async_lines"
-	} >"$tmp" || {
-		rm -f "$tmp"
-		return 1
-	}
-
-	if [ -f "${SS_STATISTICS_DNSMASQ_CONF}" ] && cmp -s "$tmp" "${SS_STATISTICS_DNSMASQ_CONF}"; then
-		rm -f "$tmp"
+ss_statistics_cleanup_legacy_dnsmasq_logging() {
+	if [ -f "${SS_STATISTICS_DNSMASQ_CONF}" ]; then
+		rm -f "${SS_STATISTICS_DNSMASQ_CONF}" || return 1
+		printf '%s\n' '1'
+	else
 		printf '%s\n' '0'
-		return 0
 	fi
+}
 
-	mv -f "$tmp" "${SS_STATISTICS_DNSMASQ_CONF}" || {
-		rm -f "$tmp"
-		return 1
-	}
+# Kept as an internal compatibility wrapper for the init script. Statistics no
+# longer enables dnsmasq query logging; this only removes a pre-0.3.20-r2 file.
+ss_statistics_configure_dnsmasq() {
+	ss_statistics_cleanup_legacy_dnsmasq_logging
+}
 
-	printf '%s\n' '1'
+ss_statistics_source_available() {
+	[ -x "$SS_STATISTICS_POLL_COMMAND" ] || return 1
+	"$SS_STATISTICS_POLL_COMMAND" >/dev/null 2>&1
 }
 
 ss_statistics_add_procd_instance() {
@@ -108,19 +78,19 @@ ss_statistics_add_procd_instance() {
 }
 
 ss_statistics_reconcile_runtime() {
-	local statistics_dnsmasq_changed=0
+	local legacy_dnsmasq_changed=0
 
 	if [ "${ss_enabled}" != "1" ] || [ "${ss_statistics_enabled}" != "1" ]; then
 		procd_kill "${PKG_NAME}" statistics >/dev/null 2>&1 || true
 
-		statistics_dnsmasq_changed="$(ss_statistics_configure_dnsmasq 0)" || {
-			log_error "Failed to disable dnsmasq statistics logging"
+		legacy_dnsmasq_changed="$(ss_statistics_cleanup_legacy_dnsmasq_logging)" || {
+			log_error "Failed to remove legacy dnsmasq statistics logging"
 			return 1
 		}
 
-		if [ "$statistics_dnsmasq_changed" = "1" ]; then
+		if [ "$legacy_dnsmasq_changed" = "1" ]; then
 			dnsmasq_restart || {
-				log_error "Failed to restart dnsmasq after disabling statistics logging"
+				log_error "Failed to restart dnsmasq after removing legacy statistics logging"
 				return 1
 			}
 		fi
@@ -133,22 +103,22 @@ ss_statistics_reconcile_runtime() {
 		return 1
 	}
 
-	ss_ensure_dnsmasq_confdir || {
-		log_error "dnsmasq confdir is unavailable while enabling statistics"
+	legacy_dnsmasq_changed="$(ss_statistics_cleanup_legacy_dnsmasq_logging)" || {
+		log_error "Failed to remove legacy dnsmasq statistics logging"
 		return 1
 	}
 
-	statistics_dnsmasq_changed="$(ss_statistics_configure_dnsmasq 1)" || {
-		log_error "Failed to enable dnsmasq statistics logging"
-		return 1
-	}
-
-	if [ "$statistics_dnsmasq_changed" = "1" ]; then
+	if [ "$legacy_dnsmasq_changed" = "1" ]; then
 		dnsmasq_restart || {
-			log_error "Failed to restart dnsmasq after enabling statistics logging"
+			log_error "Failed to restart dnsmasq after removing legacy statistics logging"
 			return 1
 		}
 	fi
+
+	ss_statistics_source_available || {
+		log_error "dnsmasq SmartSafeHub statistics UBus source is unavailable"
+		return 1
+	}
 
 	procd_open_service "${PKG_NAME}"
 	ss_statistics_add_procd_instance

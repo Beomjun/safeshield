@@ -1,6 +1,6 @@
 # shellcheck shell=ash
 
-readonly SS_MIN_DNSMASQ_VERSION='2.80'
+readonly SS_MIN_DNSMASQ_VERSION='2.93'
 _ss_dnsmasq_check_error=''
 
 ss_dnsmasq_check_error() {
@@ -18,6 +18,10 @@ ss_dnsmasq_version() {
 	'
 }
 
+ss_dnsmasq_smartsafehub_block_supported() {
+	dnsmasq --test --conf-file=/dev/null --smartsafehub-block=/safeshield.invalid/ >/dev/null 2>&1
+}
+
 ss_require_supported_dnsmasq() {
 	local current_version
 
@@ -29,6 +33,7 @@ ss_require_supported_dnsmasq() {
 		ss_status_set dnsmasq_version ''
 		ss_status_set health_dnsmasq_binary '0'
 		ss_status_set health_dnsmasq_version '0'
+		ss_status_set health_dnsmasq_features '0'
 		log_error 'dnsmasq binary not found'
 		return 1
 	fi
@@ -40,6 +45,7 @@ ss_require_supported_dnsmasq() {
 	if [ -z "${current_version}" ]; then
 		_ss_dnsmasq_check_error='dnsmasq_version_unknown'
 		ss_status_set health_dnsmasq_version '0'
+		ss_status_set health_dnsmasq_features '0'
 		log_error 'Unable to determine dnsmasq version'
 		return 1
 	fi
@@ -47,11 +53,20 @@ ss_require_supported_dnsmasq() {
 	if ! is_greater_equal "${current_version}" "${SS_MIN_DNSMASQ_VERSION}"; then
 		_ss_dnsmasq_check_error='dnsmasq_version_unsupported'
 		ss_status_set health_dnsmasq_version '0'
+		ss_status_set health_dnsmasq_features '0'
 		log_error "Unsupported dnsmasq version ${current_version}; SafeShield requires ${SS_MIN_DNSMASQ_VERSION} or later"
 		return 1
 	fi
 
 	ss_status_set health_dnsmasq_version '1'
+	if ! ss_dnsmasq_smartsafehub_block_supported; then
+		_ss_dnsmasq_check_error='dnsmasq_smartsafehub_patch_required'
+		ss_status_set health_dnsmasq_features '0'
+		log_error 'dnsmasq does not provide the SmartSafeHub block accounting extension'
+		return 1
+	fi
+
+	ss_status_set health_dnsmasq_features '1'
 	return 0
 }
 

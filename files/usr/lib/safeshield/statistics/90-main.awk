@@ -27,6 +27,123 @@ function record_event(query_delta, blocked_delta, client_ip,    now, bucket) {
 	}
 }
 
+function source_counter_delta(current, previous, same_epoch) {
+	current = numeric(current, 0)
+	previous = numeric(previous, 0)
+
+	if (!same_epoch || current < previous) {
+		return current
+	}
+	return current - previous
+}
+
+function clear_poll_clients(    address) {
+	for (address in poll_client_seen) {
+		delete poll_client_seen[address]
+		delete poll_client_queries[address]
+		delete poll_client_blocked[address]
+	}
+}
+
+function replace_source_clients(    address) {
+	for (address in source_client_queries) {
+		delete source_client_queries[address]
+		delete source_client_blocked[address]
+	}
+	for (address in poll_client_seen) {
+		source_client_queries[address] = poll_client_queries[address] + 0
+		source_client_blocked[address] = poll_client_blocked[address] + 0
+	}
+}
+
+function apply_source_snapshot(    now, bucket, had_source, same_epoch, query_delta, blocked_delta, internal_queries, internal_blocked, address, client_queries_delta, client_blocked_delta) {
+	if (!poll_active || poll_instance_id == "") {
+		return
+	}
+
+	now = current_time()
+	bucket = hour_start(now)
+	had_source = source_initialized
+	same_epoch = had_source && poll_instance_id == source_instance_id
+
+	if (!had_source) {
+		query_delta = 0
+		blocked_delta = 0
+	}
+	else {
+		query_delta = source_counter_delta(poll_total_queries, source_total_queries, same_epoch)
+		blocked_delta = source_counter_delta(poll_total_blocked, source_total_blocked, same_epoch)
+	}
+
+	internal_queries = 0
+	internal_blocked = 0
+	for (address in poll_client_seen) {
+		if (!had_source) {
+			client_queries_delta = 0
+			client_blocked_delta = 0
+		}
+		else {
+			client_queries_delta = source_counter_delta(poll_client_queries[address], \
+				source_client_queries[address], same_epoch)
+			client_blocked_delta = source_counter_delta(poll_client_blocked[address], \
+				source_client_blocked[address], same_epoch)
+		}
+
+		if (is_internal_statistics_client(address)) {
+			internal_queries += client_queries_delta
+			internal_blocked += client_blocked_delta
+			continue
+		}
+
+		if (client_queries_delta > 0 || client_blocked_delta > 0) {
+			record_device(address, client_queries_delta, client_blocked_delta, now)
+		}
+	}
+
+	query_delta -= internal_queries
+	blocked_delta -= internal_blocked
+	if (query_delta < 0) {
+		query_delta = 0
+	}
+	if (blocked_delta < 0) {
+		blocked_delta = 0
+	}
+
+	if (query_delta > 0 || blocked_delta > 0) {
+		queries[bucket] += 0
+		blocked[bucket] += 0
+		queries[bucket] += query_delta
+		blocked[bucket] += blocked_delta
+	}
+
+	source_initialized = 1
+	source_available = 1
+	source_instance_id = poll_instance_id
+	source_transport_scope = poll_transport_scope
+	source_client_capacity = poll_client_capacity
+	source_tracked_clients = poll_tracked_clients
+	source_untracked_queries = poll_untracked_queries
+	source_total_queries = poll_total_queries
+	source_total_blocked = poll_total_blocked
+	replace_source_clients()
+
+	poll_active = 0
+	clear_poll_clients()
+	snapshot_dirty = 1
+	event_index++
+	save_snapshot(now, 0, 0)
+}
+
+function record_source_error(    now) {
+	now = current_time()
+	source_available = 0
+	source_error_count++
+	source_last_error_at = now
+	snapshot_dirty = 1
+	event_index++
+	save_snapshot(now, 0, 0)
+}
+
 BEGIN {
 	state_file = (state_file != "") ? state_file : "/tmp/safeshield/statistics/state.tsv"
 	json_file = (json_file != "") ? json_file : "/tmp/safeshield/statistics/statistics.json"
@@ -65,6 +182,18 @@ BEGIN {
 	persistence_healthy = (persistent_state_file != "" || persistent_journal_file != "") ? 1 : 0
 	persistent_error_count = 0
 	persistent_last_error_at = 0
+	source_initialized = 0
+	source_available = 0
+	source_instance_id = ""
+	source_transport_scope = ""
+	source_client_capacity = 0
+	source_tracked_clients = 0
+	source_untracked_queries = 0
+	source_total_queries = 0
+	source_total_blocked = 0
+	source_error_count = 0
+	source_last_error_at = 0
+	poll_active = 0
 
 	if (snapshot_interval < 1) {
 		snapshot_interval = 60
@@ -164,6 +293,38 @@ BEGIN {
 		next_compact_at = 0
 	}
 	save_snapshot(current_time(), 0, 1)
+}
+
+$1 == "snapshot" && NF >= 8 {
+	clear_poll_clients()
+	poll_active = 1
+	poll_instance_id = $2
+	poll_transport_scope = $3
+	poll_client_capacity = numeric($4, 0)
+	poll_tracked_clients = numeric($5, 0)
+	poll_untracked_queries = numeric($6, 0)
+	poll_total_queries = numeric($7, 0)
+	poll_total_blocked = numeric($8, 0)
+	next
+}
+
+$1 == "client" && NF >= 4 && poll_active {
+	poll_client_seen[$2] = 1
+	poll_client_queries[$2] = numeric($3, 0)
+	poll_client_blocked[$2] = numeric($4, 0)
+	next
+}
+
+$1 == "commit" && poll_active {
+	apply_source_snapshot()
+	next
+}
+
+$1 == "error" {
+	poll_active = 0
+	clear_poll_clients()
+	record_source_error()
+	next
 }
 
 /dnsmasq\[[0-9]+\]:/ {

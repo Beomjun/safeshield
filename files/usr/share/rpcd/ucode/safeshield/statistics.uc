@@ -65,6 +65,24 @@ function sanitize_devices(items) {
     return result;
 }
 
+function sanitize_source(item) {
+    if (type(item) != 'object') {
+        item = {};
+    }
+
+    return {
+        backend: sprintf('%s', item.backend || 'dnsmasq_ubus'),
+        available: to_bool(item.available, false),
+        instance_id: sprintf('%s', item.instance_id || ''),
+        transport_scope: sprintf('%s', item.transport_scope || ''),
+        client_capacity: to_int(item.client_capacity, 0),
+        tracked_clients: to_int(item.tracked_clients, 0),
+        untracked_queries: to_int(item.untracked_queries, 0),
+        poll_error_count: to_int(item.poll_error_count, 0),
+        last_error_at: to_int(item.last_error_at, 0)
+    };
+}
+
 function build_statistics() {
     reload_uci();
     let enabled = to_bool(cfg('statistics_enabled', '1'), true);
@@ -96,6 +114,7 @@ function build_statistics() {
         effective_snapshot_interval_s: to_int(data.snapshot_interval_s, snapshot_interval_s),
         retention_hours: retention_hours,
         generation_id: sprintf('%s', data.generation_id || ''),
+        source: sanitize_source(data.source),
         started_at: to_int(data.started_at, 0),
         session_started_at: to_int(data.session_started_at, 0),
         updated_at: to_int(data.updated_at, 0),

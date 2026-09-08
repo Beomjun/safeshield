@@ -27,6 +27,13 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 	printf "\"persistent_compacted_at\":%d,\"persistent_compact_interval_s\":%d,", persistent_compacted_at, persistent_compact_interval >> tmp
 	printf "\"snapshot_interval_s\":%d,", snapshot_interval >> tmp
 	printf "\"generation_id\":\"%s\",", json_escape(generation_id) >> tmp
+	printf "\"source\":{\"backend\":\"dnsmasq_ubus\",\"available\":%s,", source_available ? "true" : "false" >> tmp
+	printf "\"instance_id\":\"%s\",\"transport_scope\":\"%s\",", \
+		json_escape(source_instance_id), json_escape(source_transport_scope) >> tmp
+	printf "\"client_capacity\":%d,\"tracked_clients\":%d,\"untracked_queries\":%d,", \
+		source_client_capacity, source_tracked_clients, source_untracked_queries >> tmp
+	printf "\"poll_error_count\":%d,\"last_error_at\":%d},", \
+		source_error_count, source_last_error_at >> tmp
 	printf "\"started_at\":%d,\"session_started_at\":%d,\"updated_at\":%d,", started_at, session_started_at, now >> tmp
 	printf "\"retention_hours\":%d,", retention_hours >> tmp
 	printf "\"device_limit\":%d,\"devices_truncated\":%s,", max_devices, truncated >> tmp

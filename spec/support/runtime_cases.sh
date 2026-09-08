@@ -85,55 +85,48 @@ log_info() { :; }
 log_warn() { :; }
 log_error() { printf '%s\n' "\$*" >&2; }
 EOF_CORE
-	cat >"$TMP/bin/logread" <<'EOF_LOGREAD'
+	cat >"$TMP/bin/stats-poll" <<'EOF_POLL'
 #!/bin/sh
-printf '%s\n' "$$" >"$LOGREAD_PID_FILE"
-printf '%s\n' "$@" >"$LOGREAD_ARGS_FILE"
-while :; do
-	printf '%s\n' 'daemon.info dnsmasq[1]: query[A] example.com from 192.168.1.2'
-done
-EOF_LOGREAD
+printf '%s\n' '1' >>"$POLL_COUNT_FILE"
+printf '%s\n' 'snapshot	runtime-instance	udp	128	1	0	10	2'
+printf '%s\n' 'client	192.168.1.2	10	2'
+printf '%s\n' 'commit'
+EOF_POLL
 	cat >"$TMP/bin/awk" <<'EOF_AWK'
 #!/bin/sh
 printf '%s\n' "$$" >"$AWK_PID_FILE"
 printf '%s\n' "$@" >"$AWK_ARGS_FILE"
 while IFS= read -r line; do
-	: "$line"
+	printf '%s\n' "$line" >>"$AWK_INPUT_FILE"
 done
 EOF_AWK
 	cat >"$TMP/bin/ip" <<'EOF_IP'
 #!/bin/sh
 exit 0
 EOF_IP
-	chmod 755 "$TMP/bin/logread" "$TMP/bin/awk" "$TMP/bin/ip"
-	LOGREAD_PID_FILE="$TMP/logread.pid"
-	LOGREAD_ARGS_FILE="$TMP/logread.args"
+	chmod 755 "$TMP/bin/stats-poll" "$TMP/bin/awk" "$TMP/bin/ip"
+	POLL_COUNT_FILE="$TMP/poll-count"
 	AWK_PID_FILE="$TMP/awk.pid"
 	AWK_ARGS_FILE="$TMP/awk.args"
-	export LOGREAD_PID_FILE LOGREAD_ARGS_FILE AWK_PID_FILE AWK_ARGS_FILE
+	AWK_INPUT_FILE="$TMP/awk.input"
+	export POLL_COUNT_FILE AWK_PID_FILE AWK_ARGS_FILE AWK_INPUT_FILE
 	PATH="$TMP/bin:$PATH" \
 		SS_STATSD_FUNCTIONS_LIB="$TMP/functions.sh" \
 		SS_STATSD_CORE_LIB="$TMP/core.sh" \
 		SS_STATSD_AWK_DIR="$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics" \
+		SS_STATSD_POLL_COMMAND="$TMP/bin/stats-poll" \
 		SS_STATSD_GENERATION_ID='runtime-generation' \
 		SS_STATSD_PERSISTENT_STATE_FILE="$TMP/flash/statistics-state.tsv" \
 		SS_STATSD_PERSISTENT_JOURNAL_FILE="$TMP/flash/statistics-journal.tsv" \
 		sh "$SS_SPEC_ROOT/files/usr/libexec/safeshield-statsd" &
 	STATSD_PID=$!
 	tries=0
-	while [ ! -s "$LOGREAD_PID_FILE" ] || [ ! -s "$AWK_PID_FILE" ]; do
+	while [ ! -s "$AWK_PID_FILE" ] || ! grep -Fx 'commit' "$AWK_INPUT_FILE" >/dev/null 2>&1; do
 		tries=$((tries + 1))
 		[ "$tries" -lt 100 ] || return 1
 		sleep 0.02
 	done
-	LOGREAD_PID="$(cat "$LOGREAD_PID_FILE")"
 	AWK_PID="$(cat "$AWK_PID_FILE")"
-	expected_logread_args='-f
--l
-0
--e
-dnsmasq'
-	ss_spec_assert_eq "$(cat "$LOGREAD_ARGS_FILE")" "$expected_logread_args"
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'snapshot_interval=300'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'identity_cache_ttl=60'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'generation_seed=runtime-generation'
@@ -142,12 +135,14 @@ dnsmasq'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/90-main.awk"
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'persistent_state_file='
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'persistent_journal_file='
+	ss_spec_assert_file_line "$AWK_INPUT_FILE" 'snapshot	runtime-instance	udp	128	1	0	10	2'
+	ss_spec_assert_file_line "$AWK_INPUT_FILE" 'client	192.168.1.2	10	2'
+	ss_spec_assert_eq "$(cat "$POLL_COUNT_FILE")" '1'
 	[ ! -e "$TMP/flash" ]
 	kill -TERM "$STATSD_PID"
 	wait "$STATSD_PID" 2>/dev/null || true
 	STATSD_PID=''
 	sleep 0.05
-	! kill -0 "$LOGREAD_PID" 2>/dev/null
 	! kill -0 "$AWK_PID" 2>/dev/null
 	[ ! -e "$TMP/statistics/collector.lock" ]
 	! find "$TMP/statistics" -maxdepth 1 -name 'events.*' | grep . >/dev/null
@@ -159,11 +154,17 @@ ss_case_statistics_reconcile() (
 	trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 	SS_DNSMASQ_DIR="$TMP/dnsmasq.d"
 	SS_STATISTICS_DNSMASQ_CONF="$SS_DNSMASQ_DIR/safeshield.statistics.conf"
+	SS_STATISTICS_POLL_COMMAND="$TMP/stats-poll"
 	PKG_NAME='safeshield'
 	ss_enabled=1
 	ss_statistics_enabled=0
-	export SS_DNSMASQ_DIR SS_STATISTICS_DNSMASQ_CONF PKG_NAME
+	export SS_DNSMASQ_DIR SS_STATISTICS_DNSMASQ_CONF SS_STATISTICS_POLL_COMMAND PKG_NAME
 	export ss_enabled ss_statistics_enabled
+	cat >"$SS_STATISTICS_POLL_COMMAND" <<'EOF_POLL'
+#!/bin/sh
+exit 0
+EOF_POLL
+	chmod 755 "$SS_STATISTICS_POLL_COMMAND"
 	# shellcheck disable=SC1091
 	. "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.sh"
 	CALLS="$TMP/calls"
@@ -171,10 +172,6 @@ ss_case_statistics_reconcile() (
 	log_error() { :; }
 	ss_require_supported_dnsmasq() {
 		record_call require_supported_dnsmasq
-		return 0
-	}
-	ss_ensure_dnsmasq_confdir() {
-		record_call ensure_dnsmasq_confdir
 		return 0
 	}
 	dnsmasq_restart() {
@@ -192,7 +189,7 @@ ss_case_statistics_reconcile() (
 	procd_close_service() { record_call "procd_close_service $*"; }
 	mkdir -p "$SS_DNSMASQ_DIR"
 	cat >"$SS_STATISTICS_DNSMASQ_CONF" <<'CONFIG'
-# Managed by SafeShield. Do not edit.
+# Legacy SafeShield statistics logging
 log-queries=extra
 log-async=25
 CONFIG
@@ -202,16 +199,18 @@ CONFIG
 	ss_spec_assert_file_line "$CALLS" 'procd_kill safeshield statistics'
 	ss_spec_assert_file_line "$CALLS" 'dnsmasq_restart'
 	! grep -Fx 'procd_kill safeshield' "$CALLS" >/dev/null
+
 	ss_statistics_enabled=1
 	: >"$CALLS"
 	ss_statistics_reconcile_runtime
-	ss_spec_assert_file_line "$SS_STATISTICS_DNSMASQ_CONF" 'log-queries=extra'
-	ss_spec_assert_file_line "$SS_STATISTICS_DNSMASQ_CONF" 'log-async=25'
-	ss_spec_assert_file_line "$CALLS" 'dnsmasq_restart'
+	[ ! -e "$SS_STATISTICS_DNSMASQ_CONF" ]
+	ss_spec_assert_file_line "$CALLS" 'require_supported_dnsmasq'
 	ss_spec_assert_file_line "$CALLS" 'procd_open_service safeshield'
 	ss_spec_assert_file_line "$CALLS" 'procd_open_instance statistics'
 	ss_spec_assert_file_line "$CALLS" 'procd_close_service add'
+	! grep -Fx 'dnsmasq_restart' "$CALLS" >/dev/null
 	! grep -F 'procd_kill safeshield' "$CALLS" >/dev/null
+
 	: >"$CALLS"
 	ss_statistics_reconcile_runtime
 	! grep -Fx 'dnsmasq_restart' "$CALLS" >/dev/null
