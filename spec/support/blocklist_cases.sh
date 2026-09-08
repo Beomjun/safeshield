@@ -234,3 +234,87 @@ shared.example'
 	ss_spec_assert_file_contains "$STATISTICS_OUTPUT" 'device_first_hour = device_first_bucket[key] + 0'
 	ss_spec_assert_file_contains "$STATISTICS_OUTPUT" 'for (bucket = device_first_hour; bucket <= device_last_hour; bucket += 3600)'
 )
+
+ss_case_upgrade_required() (
+	set -eu
+	TMP_DIR="$(ss_spec_tmpdir)"
+	trap 'rm -rf "$TMP_DIR"' EXIT HUP INT TERM
+	SS_TMP_DIR="$TMP_DIR/tmp"
+	SS_API_PAYLOAD="$SS_TMP_DIR/resolve-request.json"
+	SS_API_RESPONSE="$SS_TMP_DIR/resolve-response.json"
+	SS_RESOLVED_SOURCES="$SS_TMP_DIR/resolved-sources.tsv"
+	SS_ARTIFACT_CACHE_STATE="$SS_TMP_DIR/artifact-sources.state"
+	ss_license_key='test-license'
+	ss_download_retry=3
+	ss_download_timeout=10
+	ss_max_blocklist_file_size_kb=1024
+	mkdir -p "$SS_TMP_DIR"
+	ss_should_stop() { return 1; }
+	ss_status_set() { printf '%s=%s\n' "$1" "$2" >>"$TMP_DIR/status"; }
+	ss_status_add_error() { :; }
+	ss_status_add_warning() { :; }
+	log_info() { :; }
+	log_error() { :; }
+	log_ok() { :; }
+	command_exists() { return 1; }
+	sleep() { printf 'sleep\n' >>"$TMP_DIR/sleep"; }
+	# shellcheck disable=SC1091
+	. "$SS_SPEC_ROOT/files/usr/lib/safeshield/blocklist.sh"
+	ss_write_resolve_payload() { printf '{}\n' >"$1"; }
+
+	printf '%s\n' 'HTTP error 426' >"$TMP_DIR/uclient.log"
+	ss_spec_assert_eq "$(ss_http_status_from_uclient_log "$TMP_DIR/uclient.log")" '426'
+
+	command_exists() { [ "$1" = 'curl' ]; }
+	curl() {
+		out=''
+		while [ "$#" -gt 0 ]; do
+			if [ "$1" = '-o' ]; then
+				shift
+				out="$1"
+			fi
+			shift
+		done
+		[ -z "$out" ] || printf '%s\n' '{"code":"safeshield_upgrade_required"}' >"$out"
+		printf '%s' '426'
+		return 0
+	}
+	if ss_http_post_json 'https://example.invalid/resolve' "$SS_API_PAYLOAD" "$SS_API_RESPONSE"; then
+		return 1
+	fi
+	ss_spec_assert_eq "$SS_HTTP_STATUS" '426'
+	if ss_http_get_file 'https://example.invalid/artifact' "$SS_TMP_DIR/artifact.raw"; then
+		return 1
+	fi
+	ss_spec_assert_eq "$SS_HTTP_STATUS" '426'
+
+	command_exists() { return 1; }
+	RESOLVE_CALLS=0
+	ss_http_post_json() {
+		RESOLVE_CALLS=$((RESOLVE_CALLS + 1))
+		SS_HTTP_STATUS='426'
+		return 1
+	}
+	if ss_resolve_artifact; then
+		return 1
+	fi
+	ss_spec_assert_eq "$RESOLVE_CALLS" '1'
+	ss_spec_assert_eq "$SS_RESOLVE_ERROR_CODE" 'safeshield_upgrade_required'
+	ss_spec_assert_file_contains "$TMP_DIR/status" 'health_api_resolve=0'
+	ss_spec_assert_not_exists "$TMP_DIR/sleep"
+
+	printf '%s\n' '0|block|test-source|https://example.invalid/artifact.txt|' >"$SS_RESOLVED_SOURCES"
+	DOWNLOAD_CALLS=0
+	ss_http_get_file() {
+		DOWNLOAD_CALLS=$((DOWNLOAD_CALLS + 1))
+		SS_HTTP_STATUS='426'
+		return 1
+	}
+	if ss_download_api_artifacts; then
+		return 1
+	fi
+	ss_spec_assert_eq "$DOWNLOAD_CALLS" '1'
+	ss_spec_assert_eq "$SS_ARTIFACT_DOWNLOAD_ERROR_CODE" 'safeshield_upgrade_required'
+	ss_spec_assert_file_contains "$TMP_DIR/status" 'health_artifact_download=0'
+	ss_spec_assert_not_exists "$TMP_DIR/sleep"
+)

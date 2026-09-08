@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=safeshield
 PKG_VERSION:=0.3.19
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 PKG_MAINTAINER:=Beomjun Kang <kals323@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -84,7 +84,7 @@ define Package/safeshield/install
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/statistics.sh $(1)/usr/lib/safeshield/statistics.sh
 	$(INSTALL_DIR) $(1)/usr/lib/safeshield/statistics
 	$(INSTALL_DATA) ./files/usr/lib/safeshield/statistics/*.awk $(1)/usr/lib/safeshield/statistics/
-	echo '$(PKG_VERSION)-$(PKG_RELEASE)' > $(1)/usr/lib/safeshield/version
+	echo '$(PKG_VERSION)-r$(PKG_RELEASE)' > $(1)/usr/lib/safeshield/version
 
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/ucode
 	$(INSTALL_BIN) ./files/usr/share/rpcd/ucode/safeshield.uc $(1)/usr/share/rpcd/ucode/safeshield.uc

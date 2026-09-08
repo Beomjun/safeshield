@@ -391,7 +391,11 @@ ss_case_status_version() (
 	[ -n "$init_version" ]
 	ss_spec_assert_eq "$init_version" "${make_version}-r${make_release}"
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/etc/init.d/safeshield" "printf '%s\\n' \"\$PKG_VERSION\""
-	ss_spec_assert_file_contains "$SS_SPEC_ROOT/Makefile" "echo '\$(PKG_VERSION)-\$(PKG_RELEASE)' > \$(1)/usr/lib/safeshield/version"
+	ss_spec_assert_file_contains "$SS_SPEC_ROOT/Makefile" "echo '\$(PKG_VERSION)-r\$(PKG_RELEASE)' > \$(1)/usr/lib/safeshield/version"
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/share/rpcd/ucode/safeshield/core.uc" 'fs.readfile(`/usr/lib/${PKG_NAME}/version`)'
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/share/rpcd/ucode/safeshield/status.uc" 'version: PKG_VERSION,'
+	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/lib/safeshield/core.sh" 'safeshield_upgrade_required'
+	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/lib/safeshield/core.sh" 'failure_code="$(ss_resolve_error_code)"'
+	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/lib/safeshield/core.sh" 'failure_code="$(ss_artifact_download_error_code)"'
+	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/lib/safeshield/core.sh" 'if [ "$failure_code" != "safeshield_upgrade_required" ]; then'
 )

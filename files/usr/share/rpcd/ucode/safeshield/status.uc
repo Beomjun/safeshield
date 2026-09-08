@@ -28,6 +28,7 @@ function build_api_source(data, enabled) {
     let api_resolve_ok = to_optional_bool(data.health_api_resolve);
     let artifact_download_ok = to_optional_bool(data.health_artifact_download);
     let last_result = data.last_result || '';
+    let last_error_code = data.last_error_code || '';
 
     if (!enabled) {
         last_result = 'disabled';
@@ -36,10 +37,10 @@ function build_api_source(data, enabled) {
         last_result = 'ok';
     }
     else if (api_resolve_ok == false) {
-        last_result = 'api_resolve_failed';
+        last_result = last_error_code == 'safeshield_upgrade_required' ? last_error_code : 'api_resolve_failed';
     }
     else if (artifact_download_ok == false) {
-        last_result = 'artifact_download_failed';
+        last_result = last_error_code == 'safeshield_upgrade_required' ? last_error_code : 'artifact_download_failed';
     }
     else if (!last_result || last_result == 'idle') {
         last_result = 'configured';

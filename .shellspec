@@ -1,3 +1,4 @@
 --require spec_helper
 --shell sh
 --fail-no-examples
+--format documentation

@@ -3,6 +3,18 @@
 # Variables below are populated by sourced helpers and ss_load_config()
 # shellcheck disable=SC2154
 
+SS_HTTP_STATUS=''
+SS_RESOLVE_ERROR_CODE=''
+SS_ARTIFACT_DOWNLOAD_ERROR_CODE=''
+
+ss_resolve_error_code() {
+	printf '%s' "${SS_RESOLVE_ERROR_CODE:-api_resolve_failed}"
+}
+
+ss_artifact_download_error_code() {
+	printf '%s' "${SS_ARTIFACT_DOWNLOAD_ERROR_CODE:-artifact_download_failed}"
+}
+
 ss_normalize_domains() {
 	sed \
 		-e 'y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/' \
@@ -227,70 +239,141 @@ ss_uclient_supports() {
 	uclient-fetch --help 2>&1 | grep -q -- "$1"
 }
 
+ss_http_status_from_uclient_log() {
+	local log_file="$1"
+
+	sed -n 's/^HTTP error \([0-9][0-9][0-9]\)$/\1/p' "$log_file" | tail -n 1
+}
+
+ss_http_finish_uclient_request() {
+	local log_file="$1"
+	local rc="$2"
+
+	SS_HTTP_STATUS="$(ss_http_status_from_uclient_log "$log_file")"
+	if [ -s "$log_file" ]; then
+		cat "$log_file" >&2
+	fi
+	rm -f "$log_file"
+
+	return "$rc"
+}
+
 ss_http_post_json() {
 	local url="$1"
 	local payload="$2"
 	local out="$3"
-	local data
+	local data rc log_file
+
+	SS_HTTP_STATUS=''
 
 	if command_exists curl; then
-		curl -fsS \
+		SS_HTTP_STATUS="$(curl -sS \
 			--connect-timeout "$ss_download_timeout" \
 			--max-time "$ss_download_timeout" \
 			-H 'Content-Type: application/json' \
 			-H 'Accept: application/json' \
 			--data-binary "@${payload}" \
 			-o "$out" \
-			"$url"
-		return $?
+			-w '%{http_code}' \
+			"$url")" || return $?
+
+		case "$SS_HTTP_STATUS" in
+			2[0-9][0-9])
+				return 0
+				;;
+			*)
+				return 1
+				;;
+		esac
 	fi
 
 	command_exists uclient-fetch || return 1
+	log_file="${out}.uclient.txt"
+	rm -f "$log_file"
 
 	if ss_uclient_supports '--post-file' && ss_uclient_supports '--header'; then
-		uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}" \
+		if uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}" \
 			--header='Content-Type: application/json' \
 			--header='Accept: application/json' \
-			--post-file="$payload"
+			--post-file="$payload" 2>"$log_file"; then
+			rc=0
+		else
+			rc=$?
+		fi
+		ss_http_finish_uclient_request "$log_file" "$rc"
 		return $?
 	fi
 
 	if ss_uclient_supports '--post-file'; then
-		uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}" --post-file="$payload"
+		if uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}" --post-file="$payload" 2>"$log_file"; then
+			rc=0
+		else
+			rc=$?
+		fi
+		ss_http_finish_uclient_request "$log_file" "$rc"
 		return $?
 	fi
 
 	if ss_uclient_supports '--post-data'; then
 		data="$(cat "$payload")"
 		if ss_uclient_supports '--header'; then
-			uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}" \
+			if uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}" \
 				--header='Content-Type: application/json' \
 				--header='Accept: application/json' \
-				--post-data="$data"
+				--post-data="$data" 2>"$log_file"; then
+				rc=0
+			else
+				rc=$?
+			fi
 		else
-			uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}" --post-data="$data"
+			if uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}" --post-data="$data" 2>"$log_file"; then
+				rc=0
+			else
+				rc=$?
+			fi
 		fi
+		ss_http_finish_uclient_request "$log_file" "$rc"
 		return $?
 	fi
 
+	rm -f "$log_file"
 	return 1
 }
 
 ss_http_get_file() {
 	local url="$1"
 	local out="$2"
+	local rc log_file
+
+	SS_HTTP_STATUS=''
 
 	if command_exists curl; then
-		curl -fLSs \
+		SS_HTTP_STATUS="$(curl -LSs \
 			--connect-timeout "$ss_download_timeout" \
 			--max-time "$ss_download_timeout" \
 			-o "$out" \
-			"$url"
-		return $?
+			-w '%{http_code}' \
+			"$url")" || return $?
+
+		case "$SS_HTTP_STATUS" in
+			2[0-9][0-9])
+				return 0
+				;;
+			*)
+				return 1
+				;;
+		esac
 	fi
 
 	command_exists uclient-fetch || return 1
-	uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}"
+	log_file="${out}.uclient.txt"
+	rm -f "$log_file"
+	if uclient-fetch "$url" -O "$out" --timeout="${ss_download_timeout}" 2>"$log_file"; then
+		rc=0
+	else
+		rc=$?
+	fi
+	ss_http_finish_uclient_request "$log_file" "$rc"
 }
 
 ss_artifact_source_action() {
@@ -391,6 +474,7 @@ ss_resolve_artifact_sources() {
 ss_resolve_artifact() {
 	local url response payload retries ok
 
+	SS_RESOLVE_ERROR_CODE='api_resolve_failed'
 	url='https://www.smartsafehub.com/api/v1/licenses/resolve'
 	payload="$SS_API_PAYLOAD"
 	response="$SS_API_RESPONSE"
@@ -414,6 +498,13 @@ ss_resolve_artifact() {
 		if ss_http_post_json "$url" "$payload" "$response" && [ -s "$response" ]; then
 			ok=1
 			break
+		fi
+
+		if [ "$SS_HTTP_STATUS" = "426" ]; then
+			log_error "Hub API requires a newer SafeShield version (HTTP 426)"
+			SS_RESOLVE_ERROR_CODE='safeshield_upgrade_required'
+			ss_status_set health_api_resolve "0"
+			return 1
 		fi
 
 		ss_should_stop && return 130
@@ -452,6 +543,7 @@ ss_resolve_artifact() {
 	ss_status_set license_plan "${ss_resolved_license_plan:-free}"
 	ss_status_set license_status "${ss_resolved_license_status:-unlicensed}"
 	ss_status_set device_profile "$ss_resolved_device_profile"
+	SS_RESOLVE_ERROR_CODE=''
 
 	log_ok "Resolved ${ss_resolved_artifact_tier:-unknown}/${ss_resolved_artifact_version:-unknown} artifact sources for plan ${ss_resolved_license_plan:-free}"
 }
@@ -518,6 +610,8 @@ ss_download_api_artifacts() {
 	local checksum_count=0
 	local cache_state_tmp="${SS_ARTIFACT_CACHE_STATE}.tmp.$$"
 
+	SS_ARTIFACT_DOWNLOAD_ERROR_CODE='artifact_download_failed'
+
 	[ -s "${SS_RESOLVED_SOURCES}" ] || {
 		log_error "Resolved artifact source list is unavailable"
 		ss_status_set health_artifact_download "0"
@@ -554,6 +648,15 @@ ss_download_api_artifacts() {
 			if ss_http_get_file "$source_url" "$output" && [ -s "$output" ]; then
 				ok=1
 				break
+			fi
+
+			if [ "$SS_HTTP_STATUS" = "426" ]; then
+				log_error "Artifact download requires a newer SafeShield version (HTTP 426)"
+				SS_ARTIFACT_DOWNLOAD_ERROR_CODE='safeshield_upgrade_required'
+				ss_status_set health_artifact_download "0"
+				rm -f "$output" "$cache_state_tmp"
+				ss_clear_cached_api_sources
+				return 1
 			fi
 
 			retries=$((retries + 1))
@@ -638,6 +741,7 @@ ss_download_api_artifacts() {
 		ss_status_add_warning "artifact_sha256_partial"
 	fi
 	ss_status_set health_artifact_download "1"
+	SS_ARTIFACT_DOWNLOAD_ERROR_CODE=''
 	log_ok "Downloaded ${downloaded} SafeShield artifact source(s)"
 }
 

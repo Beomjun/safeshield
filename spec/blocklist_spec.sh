@@ -15,6 +15,13 @@ Describe 'SafeShield blocklist behavior'
 		The error should equal ''
 	End
 
+	It 'stops retries when the Hub requires a SafeShield upgrade'
+		When call ss_case_upgrade_required
+		The status should be success
+		The output should equal ''
+		The error should equal ''
+	End
+
 	It 'keeps optimized merge and statistics serialization paths'
 		When call ss_case_performance_paths
 		The status should be success

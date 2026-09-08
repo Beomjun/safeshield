@@ -518,7 +518,7 @@ safeshield_apply_local_rules() {
 }
 
 safeshield_force_download() {
-	local rc refresh_interval
+	local rc refresh_interval failure_code
 
 	if ! ss_refresh_lock_open; then
 		log_warn "Another refresh is already running, skipping"
@@ -639,8 +639,11 @@ safeshield_force_download() {
 			return $?
 			;;
 		*)
-			ss_status_mark_failure "api_resolve_failed"
-			ss_restore_and_restart
+			failure_code="$(ss_resolve_error_code)"
+			ss_status_mark_failure "$failure_code"
+			if [ "$failure_code" != "safeshield_upgrade_required" ]; then
+				ss_restore_and_restart
+			fi
 			ss_refresh_lock_close
 			return 1
 			;;
@@ -661,8 +664,11 @@ safeshield_force_download() {
 			return $?
 			;;
 		*)
-			ss_status_mark_failure "artifact_download_failed"
-			ss_restore_and_restart
+			failure_code="$(ss_artifact_download_error_code)"
+			ss_status_mark_failure "$failure_code"
+			if [ "$failure_code" != "safeshield_upgrade_required" ]; then
+				ss_restore_and_restart
+			fi
 			ss_refresh_lock_close
 			return 1
 			;;

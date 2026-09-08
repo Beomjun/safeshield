@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.19-r4] - 2026-09-08
+
+### Fixed
+
+- Detect HTTP 426 responses from Hub artifact resolve and download requests and stop retrying immediately with `safeshield_upgrade_required`.
+- Preserve the currently active blocklist without an unnecessary dnsmasq restore/restart when the Hub requires a newer SafeShield version.
+- Keep the installed runtime version string in OpenWrt `0.3.19-rN` form so Hub minimum-version validation receives the same revision that the package reports.
+
 ## [0.3.19-r3] - 2026-09-07
 
 ### Added
