@@ -784,7 +784,8 @@ ss_case_statistics_modules() (
 	done
 	[ ! -e "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" ]
 	[ -x "$POLL_HELPER" ]
-	ss_spec_assert_file_contains "$POLL_HELPER" "ubus.call('dnsmasq', 'smartsafehub_stats', {})"
+	ss_spec_assert_file_contains "$POLL_HELPER" "ubus.call('dnsmasq', 'safeshield_stats', {})"
+	ss_spec_assert_file_not_contains "$POLL_HELPER" 'smartsafehub_stats'
 	ss_spec_assert_file_contains "$STATSD" 'SS_STATSD_POLL_COMMAND'
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/Makefile" '$(INSTALL_BIN) ./files/usr/libexec/safeshield-stats-poll $(1)/usr/libexec/safeshield-stats-poll'
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/Makefile" '$(INSTALL_DATA) ./files/usr/lib/safeshield/statistics/*.awk $(1)/usr/lib/safeshield/statistics/'

@@ -135,10 +135,15 @@ ss_case_dnsmasq_version() (
 	export PKG_NAME
 	# shellcheck disable=SC1091
 	. "$SS_SPEC_ROOT/files/usr/lib/safeshield/utils.sh"
-	ss_status_set() { :; }
+	DNSMASQ_FEATURE_HEALTH=''
+	ss_status_set() {
+		[ "$1" = 'health_dnsmasq_features' ] && DNSMASQ_FEATURE_HEALTH="$2"
+		return 0
+	}
 	log_error() { :; }
 	# shellcheck disable=SC1091
 	. "$SS_SPEC_ROOT/files/usr/lib/safeshield/dns.sh"
+	ss_spec_assert_file_not_contains "$SS_SPEC_ROOT/files/usr/lib/safeshield/dns.sh" 'smartsafehub'
 
 	make_dnsmasq() {
 		version="$1"
@@ -173,8 +178,9 @@ SCRIPT
 	! ss_require_supported_dnsmasq
 	ss_spec_assert_eq "$(ss_dnsmasq_check_error)" 'dnsmasq_version_unsupported'
 	make_dnsmasq '2.93' 1
-	! ss_require_supported_dnsmasq
-	ss_spec_assert_eq "$(ss_dnsmasq_check_error)" 'dnsmasq_smartsafehub_patch_required'
+	ss_require_supported_dnsmasq
+	ss_spec_assert_eq "$(ss_dnsmasq_check_error)" ''
+	ss_spec_assert_eq "$DNSMASQ_FEATURE_HEALTH" '0'
 	cat >"$TMP_DIR/dnsmasq" <<'SCRIPT'
 #!/bin/sh
 printf '%s\n' 'unexpected version output'

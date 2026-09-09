@@ -66,6 +66,30 @@ ss_statistics_source_available() {
 	"$SS_STATISTICS_POLL_COMMAND" >/dev/null 2>&1
 }
 
+ss_statistics_disable_if_dnsmasq_unpatched() {
+	[ "${ss_enabled}" = "1" ] || return 0
+	[ "${ss_statistics_enabled}" = "1" ] || return 0
+	ss_dnsmasq_safeshield_block_supported && return 0
+
+	log_warn 'Disabling SafeShield statistics because dnsmasq does not provide the SafeShield extension'
+	ss_status_set health_dnsmasq_features '0'
+	ss_status_add_warning 'statistics_disabled_dnsmasq_safeshield_patch_unavailable'
+
+	# Persist the defensive disable when UCI is available so LuCI does not keep
+	# presenting statistics as enabled on a router that cannot provide counters.
+	if command -v uci >/dev/null 2>&1; then
+		if uci -q set "${PKG_NAME}.config.statistics_enabled=0" && uci -q commit "${PKG_NAME}"; then
+			log_warn 'SafeShield statistics configuration was disabled'
+		else
+			uci -q revert "${PKG_NAME}.config.statistics_enabled" >/dev/null 2>&1 || true
+			log_warn 'Failed to persist the SafeShield statistics disable; disabling it for this runtime'
+		fi
+	fi
+
+	ss_statistics_enabled='0'
+	return 0
+}
+
 ss_statistics_add_procd_instance() {
 	procd_open_instance statistics
 	procd_set_param command /usr/libexec/safeshield-statsd
@@ -79,6 +103,15 @@ ss_statistics_add_procd_instance() {
 
 ss_statistics_reconcile_runtime() {
 	local legacy_dnsmasq_changed=0
+
+	if [ "${ss_enabled}" = "1" ] && [ "${ss_statistics_enabled}" = "1" ]; then
+		ss_require_supported_dnsmasq || {
+			log_error "Failed dnsmasq compatibility check while enabling statistics"
+			return 1
+		}
+
+		ss_statistics_disable_if_dnsmasq_unpatched || return 1
+	fi
 
 	if [ "${ss_enabled}" != "1" ] || [ "${ss_statistics_enabled}" != "1" ]; then
 		procd_kill "${PKG_NAME}" statistics >/dev/null 2>&1 || true
@@ -98,11 +131,6 @@ ss_statistics_reconcile_runtime() {
 		return 0
 	fi
 
-	ss_require_supported_dnsmasq || {
-		log_error "Failed dnsmasq compatibility check while enabling statistics"
-		return 1
-	}
-
 	legacy_dnsmasq_changed="$(ss_statistics_cleanup_legacy_dnsmasq_logging)" || {
 		log_error "Failed to remove legacy dnsmasq statistics logging"
 		return 1
@@ -116,7 +144,7 @@ ss_statistics_reconcile_runtime() {
 	fi
 
 	ss_statistics_source_available || {
-		log_error "dnsmasq SmartSafeHub statistics UBus source is unavailable"
+		log_error "dnsmasq SafeShield statistics UBus source is unavailable"
 		return 1
 	}
 

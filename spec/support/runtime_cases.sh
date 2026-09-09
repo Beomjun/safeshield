@@ -80,6 +80,7 @@ SS_STATISTICS_JSON_FILE='$TMP/statistics/statistics.json'
 SS_IDENTITY_PROFILE='gl_mt300n_v2'
 . '$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.sh'
 ss_load_config() { return 0; }
+ss_dnsmasq_safeshield_block_supported() { return 0; }
 command_exists() { command -v "\$1" >/dev/null 2>&1; }
 log_info() { :; }
 log_warn() { :; }
@@ -170,6 +171,15 @@ EOF_POLL
 	CALLS="$TMP/calls"
 	record_call() { printf '%s\n' "$*" >>"$CALLS"; }
 	log_error() { :; }
+	log_warn() { :; }
+	ss_status_set() { :; }
+	ss_status_add_warning() { :; }
+	DNSMASQ_PATCHED=1
+	ss_dnsmasq_safeshield_block_supported() { [ "$DNSMASQ_PATCHED" = '1' ]; }
+	uci() {
+		record_call "uci $*"
+		return 0
+	}
 	ss_require_supported_dnsmasq() {
 		record_call require_supported_dnsmasq
 		return 0
@@ -215,6 +225,17 @@ CONFIG
 	ss_statistics_reconcile_runtime
 	! grep -Fx 'dnsmasq_restart' "$CALLS" >/dev/null
 	ss_spec_assert_file_line "$CALLS" 'procd_open_instance statistics'
+
+	DNSMASQ_PATCHED=0
+	ss_statistics_enabled=1
+	: >"$CALLS"
+	ss_statistics_reconcile_runtime
+	ss_spec_assert_eq "$ss_statistics_enabled" '0'
+	ss_spec_assert_file_line "$CALLS" 'uci -q set safeshield.config.statistics_enabled=0'
+	ss_spec_assert_file_line "$CALLS" 'uci -q commit safeshield'
+	ss_spec_assert_file_line "$CALLS" 'procd_kill safeshield statistics'
+	! grep -F 'procd_open_instance statistics' "$CALLS" >/dev/null
+
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/share/rpcd/ucode/safeshield/config.uc" "changed_names[0] == 'statistics_enabled'"
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/files/usr/share/rpcd/ucode/safeshield/config.uc" "run_service_action('reconcile_statistics', 60000)"
 )

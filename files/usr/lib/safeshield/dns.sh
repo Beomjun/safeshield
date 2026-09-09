@@ -18,8 +18,8 @@ ss_dnsmasq_version() {
 	'
 }
 
-ss_dnsmasq_smartsafehub_block_supported() {
-	dnsmasq --test --conf-file=/dev/null --smartsafehub-block=/safeshield.invalid/ >/dev/null 2>&1
+ss_dnsmasq_safeshield_block_supported() {
+	dnsmasq --test --conf-file=/dev/null --safeshield-block=/safeshield.invalid/ >/dev/null 2>&1
 }
 
 ss_require_supported_dnsmasq() {
@@ -59,14 +59,15 @@ ss_require_supported_dnsmasq() {
 	fi
 
 	ss_status_set health_dnsmasq_version '1'
-	if ! ss_dnsmasq_smartsafehub_block_supported; then
-		_ss_dnsmasq_check_error='dnsmasq_smartsafehub_patch_required'
+	if ss_dnsmasq_safeshield_block_supported; then
+		ss_status_set health_dnsmasq_features '1'
+	else
+		# The SafeShield dnsmasq patch is optional for basic DNS blocking. Keep
+		# protection available with legacy address=/domain/# rules, while the
+		# statistics runtime disables itself because cumulative counters are absent.
 		ss_status_set health_dnsmasq_features '0'
-		log_error 'dnsmasq does not provide the SmartSafeHub block accounting extension'
-		return 1
 	fi
 
-	ss_status_set health_dnsmasq_features '1'
 	return 0
 }
 

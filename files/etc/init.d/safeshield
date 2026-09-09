@@ -16,7 +16,7 @@ IPKG_INSTROOT="${IPKG_INSTROOT:-}"
 export IPKG_INSTROOT
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.3.20-r2'
+readonly PKG_VERSION='0.3.20-r3'
 
 if type extra_command >/dev/null 2>&1; then
 	extra_command 'apply_local_rules' 'Apply local allow/block rules using the cached Hub artifact'
@@ -94,8 +94,13 @@ start_service() {
 		return 1
 	}
 
-	ss_migrate_installed_blocklists_to_smartsafehub || {
-		log_error "Failed to migrate installed blocklist to SmartSafeHub dnsmasq directives"
+	ss_statistics_disable_if_dnsmasq_unpatched || {
+		log_error "Failed to apply the dnsmasq compatibility guard for statistics"
+		return 1
+	}
+
+	ss_reconcile_installed_blocklists_for_dnsmasq || {
+		log_error "Failed to reconcile installed blocklist directives for dnsmasq"
 		ss_status_mark_failure "blocklist_directive_migration_failed"
 		return 1
 	}

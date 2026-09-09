@@ -17,7 +17,7 @@ if (!ubus) {
     exit(1);
 }
 
-let data = ubus.call('dnsmasq', 'smartsafehub_stats', {});
+let data = ubus.call('dnsmasq', 'safeshield_stats', {});
 if (type(data) != 'object') {
     exit(1);
 }

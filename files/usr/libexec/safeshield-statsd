@@ -197,6 +197,11 @@ main() {
 	[ "${ss_enabled}" = "1" ] || return 0
 	[ "${ss_statistics_enabled}" = "1" ] || return 0
 
+	if ! ss_dnsmasq_safeshield_block_supported; then
+		log_warn 'SafeShield statistics collector is disabled because dnsmasq does not provide the SafeShield extension'
+		return 0
+	fi
+
 	[ -x "$SS_STATSD_POLL_COMMAND" ] || {
 		log_error "SafeShield statistics poll command is unavailable: ${SS_STATSD_POLL_COMMAND}"
 		return 1

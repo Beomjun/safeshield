@@ -22,14 +22,17 @@ ss_case_blocklist_format() (
 	ss_sync_path() { :; }
 	ss_blocklist_tmp_path() { printf '%s/.safeshield.blocklist.tmp.%s\n' "$SS_DNSMASQ_DIR" "$$"; }
 	ss_install_blocklist_atomic() { mv -f "$1" "$2"; }
+	DNSMASQ_PATCHED=1
+	ss_dnsmasq_safeshield_block_supported() { [ "$DNSMASQ_PATCHED" = '1' ]; }
 	# shellcheck disable=SC1091
 	. "$SS_SPEC_ROOT/files/usr/lib/safeshield/blocklist.sh"
+	ss_spec_assert_file_not_contains "$SS_SPEC_ROOT/files/usr/lib/safeshield/blocklist.sh" 'smartsafehub-block='
 
 	normalized="$(printf '%s\n' \
 		'address=/ads.example/#' \
 		'address=/legacy-v4.example/0.0.0.0' \
 		'address=/legacy-v6.example/::' \
-		'smartsafehub-block=/native.example/' | ss_normalize_domains)"
+		'safeshield-block=/native.example/' | ss_normalize_domains)"
 	expected='ads.example
 legacy-v4.example
 legacy-v6.example
@@ -57,9 +60,9 @@ DATA
 local-block.example
 DATA
 	ss_merge_lists
-	expected='smartsafehub-block=/ads.example/
-smartsafehub-block=/phishing.example/
-smartsafehub-block=/remote-allow.example/
+	expected='safeshield-block=/ads.example/
+safeshield-block=/phishing.example/
+safeshield-block=/remote-allow.example/
 server=/local-block.example/#
 server=/tracker.example/#'
 	ss_spec_assert_eq "$(cat "$SS_BLOCKLIST_FILE")" "$expected"
@@ -73,8 +76,8 @@ server=/tracker.example/#'
 	printf '%s\n' 'blocked.good.example.com' >"$SS_TMP_DIR/local.block.txt"
 	printf '%s\n' 'allowed.blocked.good.example.com' >"$SS_TMP_DIR/local.allow.txt"
 	ss_merge_lists
-	expected='smartsafehub-block=/blocked.good.example.com/
-smartsafehub-block=/example.com/
+	expected='safeshield-block=/blocked.good.example.com/
+safeshield-block=/example.com/
 server=/allowed.blocked.good.example.com/#
 server=/good.example.com/#'
 	ss_spec_assert_eq "$(cat "$SS_BLOCKLIST_FILE")" "$expected"
@@ -84,11 +87,28 @@ address=/migrate-one.example/#
 address=/migrate-two.example/0.0.0.0
 server=/allowed.example/#
 DATA
-	ss_migrate_blocklist_file_to_smartsafehub "$SS_BLOCKLIST_FILE"
-	expected='smartsafehub-block=/migrate-one.example/
-smartsafehub-block=/migrate-two.example/
+	ss_reconcile_blocklist_file_for_dnsmasq "$SS_BLOCKLIST_FILE"
+	expected='safeshield-block=/migrate-one.example/
+safeshield-block=/migrate-two.example/
 server=/allowed.example/#'
 	ss_spec_assert_eq "$(cat "$SS_BLOCKLIST_FILE")" "$expected"
+
+	DNSMASQ_PATCHED=0
+	ss_reconcile_blocklist_file_for_dnsmasq "$SS_BLOCKLIST_FILE"
+	expected='address=/migrate-one.example/#
+address=/migrate-two.example/#
+server=/allowed.example/#'
+	ss_spec_assert_eq "$(cat "$SS_BLOCKLIST_FILE")" "$expected"
+
+	rm -f \
+		"$SS_TMP_DIR"/api.*.block.txt \
+		"$SS_TMP_DIR"/api.*.allow.txt \
+		"$SS_TMP_DIR"/local.block.txt \
+		"$SS_TMP_DIR"/local.allow.txt
+	printf '%s\n' 'fallback.example' >"$SS_TMP_DIR/api.0.block.txt"
+	ss_merge_lists
+	ss_spec_assert_eq "$(cat "$SS_BLOCKLIST_FILE")" 'address=/fallback.example/#'
+	DNSMASQ_PATCHED=1
 
 	cat >"$SS_BLOCKLIST_FILE" <<'DATA'
 address=/legacy.example/0.0.0.0

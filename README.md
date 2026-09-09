@@ -83,7 +83,7 @@ the Hub artifacts separate while preserving override precedence as `local allow`
 SafeShield requires the following environment:
 
 - **OpenWrt 25.12 or later**
-- **dnsmasq 2.93 or later with the SmartSafeHub statistics patch** (required for the SmartSafeHub `smartsafehub-block=/domain/` block rules)
+- **dnsmasq 2.93 or later** (the SafeShield dnsmasq extension enables cumulative statistics; stock dnsmasq falls back to standard block rules with statistics disabled)
 - At least **16 MB free flash storage**
 - Internet access for downloading blocklists
 
@@ -385,7 +385,7 @@ Hot statistics live under `/tmp/safeshield/statistics/` and are retained for up
 to 168 hourly buckets. Supported profiles additionally persist aggregate state
 with a compact base snapshot plus hourly journal, while constrained profiles
 may stay tmpfs-only. The collector no longer follows dnsmasq query logs. It
-polls dnsmasq's cumulative SmartSafeHub UBus counters at the effective snapshot
+polls dnsmasq's cumulative SafeShield UBus counters at the effective snapshot
 interval and calculates deltas in RAM. `instance_id` identifies the current
 dnsmasq counter epoch so a dnsmasq restart can be distinguished from a normal
 counter increment.
@@ -399,16 +399,18 @@ statistics_retention_hours=168
 ```
 
 When statistics are enabled, SafeShield calls `ubus call dnsmasq
-smartsafehub_stats` through a small ucode poll helper. No `log-queries` or
+safeshield_stats` through a small ucode poll helper. No `log-queries` or
 `log-async` setting is required, and disabling statistics only stops the
 collector. Existing pre-0.3.20-r2 statistics logging configuration is removed
 once during upgrade. SafeShield persists aggregate counters only; raw DNS query
 names are never collected.
 
-SafeShield emits block rules as `smartsafehub-block=/domain/`. This directive
-has the same blocking role as the previous null-address rule, but only these
-SafeShield-owned rules increment dnsmasq's SmartSafeHub blocked counter. The
-statistics source also exposes dnsmasq's `instance_id`, `transport_scope`,
+When the SafeShield dnsmasq extension is available, SafeShield emits block rules
+as `safeshield-block=/domain/`. Only these SafeShield-owned rules increment the
+dnsmasq blocked counter. If the extension is unavailable, SafeShield defensively
+uses standard `address=/domain/#` rules so DNS protection remains available and
+disables `statistics_enabled` instead of installing an unsupported directive.
+The statistics source also exposes dnsmasq's `instance_id`, `transport_scope`,
 client-table capacity, tracked-client count, and untracked-query count. The
 OpenWrt 25.12 dnsmasq PoC currently reports `transport_scope=udp`; exact TCP
 accounting requires the corresponding dnsmasq parent-process accounting work.

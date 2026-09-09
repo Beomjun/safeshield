@@ -28,7 +28,7 @@ ss_normalize_domains() {
 		-e 's/^127\.0\.0\.1[[:space:]][[:space:]]*//' \
 		-e 's#^local=/##' \
 		-e 's#^address=/##' \
-		-e 's#^smartsafehub-block=/##' \
+		-e 's#^safeshield-block=/##' \
 		-e 's#/0\.0\.0\.0$##' \
 		-e 's#/::$##' \
 		-e 's|/#$||' \
@@ -903,10 +903,19 @@ ss_merge_lists() {
 	}
 
 	if [ -s "$final_blocks" ]; then
-		awk '{ print "smartsafehub-block=/" $0 "/" }' "$final_blocks" >"$final" || {
-			rm -f "$final"
-			return 1
-		}
+		if ss_dnsmasq_safeshield_block_supported; then
+			awk '{ print "safeshield-block=/" $0 "/" }' "$final_blocks" >"$final" || {
+				rm -f "$final"
+				return 1
+			}
+		else
+			# Stock dnsmasq does not understand the SafeShield extension. Preserve
+			# protection with the standard address rule and leave statistics off.
+			awk '{ print "address=/" $0 "/#" }' "$final_blocks" >"$final" || {
+				rm -f "$final"
+				return 1
+			}
+		fi
 	fi
 
 	if [ -s "$effective_allows" ]; then
@@ -971,23 +980,39 @@ ss_merge_lists() {
 	ss_status_set blocklist_installed "1"
 }
 
-ss_migrate_blocklist_file_to_smartsafehub() {
+ss_reconcile_blocklist_file_for_dnsmasq() {
 	local path="$1"
-	local tmp="${path}.smartsafehub.$$"
+	local tmp="${path}.safeshield.$$"
 
 	[ -f "$path" ] || return 0
-	grep -Eq '^address=/[^/]+/(#|0\.0\.0\.0|::)$' "$path" || return 0
 
-	awk -F'/' '
-        $1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::") {
-            print "smartsafehub-block=/" $2 "/"
-            next
-        }
-        { print }
-    ' "$path" >"$tmp" || {
-		rm -f "$tmp"
-		return 1
-	}
+	if ss_dnsmasq_safeshield_block_supported; then
+		grep -Eq '^address=/[^/]+/(#|0\.0\.0\.0|::)$' "$path" || return 0
+
+		awk -F'/' '
+            $1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::") {
+                print "safeshield-block=/" $2 "/"
+                next
+            }
+            { print }
+        ' "$path" >"$tmp" || {
+			rm -f "$tmp"
+			return 1
+		}
+	else
+		grep -Eq '^safeshield-block=/[^/]+/$' "$path" || return 0
+
+		awk -F'/' '
+            $1 == "safeshield-block=" && $3 == "" {
+                print "address=/" $2 "/#"
+                next
+            }
+            { print }
+        ' "$path" >"$tmp" || {
+			rm -f "$tmp"
+			return 1
+		}
+	fi
 
 	mv -f "$tmp" "$path" || {
 		rm -f "$tmp"
@@ -996,9 +1021,9 @@ ss_migrate_blocklist_file_to_smartsafehub() {
 	return 0
 }
 
-ss_migrate_installed_blocklists_to_smartsafehub() {
-	ss_migrate_blocklist_file_to_smartsafehub "${SS_BLOCKLIST_FILE}" || return 1
-	ss_migrate_blocklist_file_to_smartsafehub "${SS_INACTIVE_BLOCKLIST_FILE}" || return 1
+ss_reconcile_installed_blocklists_for_dnsmasq() {
+	ss_reconcile_blocklist_file_for_dnsmasq "${SS_BLOCKLIST_FILE}" || return 1
+	ss_reconcile_blocklist_file_for_dnsmasq "${SS_INACTIVE_BLOCKLIST_FILE}" || return 1
 }
 
 ss_install_blocklist() {
@@ -1017,7 +1042,7 @@ find_test_domains() {
 	[ "$limit" -gt 0 ] 2>/dev/null || return 0
 
 	awk -F'/' -v limit="$limit" '
-        ($1 == "smartsafehub-block=" && $3 == "") ||
+        ($1 == "safeshield-block=" && $3 == "") ||
         ($1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::")) {
             if (!seen[$2]++) {
                 print $2
@@ -1037,7 +1062,7 @@ check_blocklist_rule_present() {
 	[ -f "${SS_BLOCKLIST_FILE}" ] || return 1
 
 	awk -F'/' -v d="$domain" '
-        (($1 == "smartsafehub-block=" && $3 == "") ||
+        (($1 == "safeshield-block=" && $3 == "") ||
          ($1 == "address=" && ($3 == "#" || $3 == "0.0.0.0" || $3 == "::"))) && $2 == d {
             found = 1
             exit
