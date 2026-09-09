@@ -168,7 +168,7 @@ ss_case_statistics_ubus_source() (
 	printf '%s\n' '1788000000 aa:bb:cc:dd:ee:ff 192.168.1.20 iphone *' >"$LEASES"
 
 	cat >"$INPUT" <<'DATA'
-snapshot	epoch-1	udp	128	2	0	10	2
+snapshot	epoch-1	udp	128	2	0	0	10	2
 client	192.168.1.20	6	2
 client	127.0.0.1	1	0
 commit
@@ -182,11 +182,11 @@ DATA
 		-v fixed_now=1787950800 \
 		<"$INPUT"
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":0,"blocked":0}'
-	ss_spec_assert_file_contains "$JSON" '"source":{"backend":"dnsmasq_ubus","available":true,"instance_id":"epoch-1","transport_scope":"udp","client_capacity":128,"tracked_clients":2,"untracked_queries":0'
+	ss_spec_assert_file_contains "$JSON" '"source":{"backend":"dnsmasq_ubus","available":true,"instance_id":"epoch-1","transport_scope":"udp","client_capacity":128,"tracked_clients":2,"untracked_queries":0,"untracked_blocked":0'
 	ss_spec_assert_file_contains "$STATE" "$(printf 'source	epoch-1	udp	128	2	0	10	2')"
 
 	cat >"$INPUT" <<'DATA'
-snapshot	epoch-1	udp	128	2	1	14	3
+snapshot	epoch-1	udp	128	2	1	1	14	3
 client	192.168.1.20	9	3
 client	127.0.0.1	2	0
 commit
@@ -202,9 +202,10 @@ DATA
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":3,"blocked":1}'
 	ss_spec_assert_file_contains "$JSON" '"id":"aa:bb:cc:dd:ee:ff","mac":"aa:bb:cc:dd:ee:ff","ip":"192.168.1.20","hostname":"iphone","identified":true,"queries":3,"blocked":1'
 	! grep -F '"ip":"127.0.0.1"' "$JSON" >/dev/null
+	ss_spec_assert_file_contains "$JSON" '"untracked_queries":1,"untracked_blocked":1'
 
 	cat >"$INPUT" <<'DATA'
-snapshot	epoch-2	udp	128	1	0	2	1
+snapshot	epoch-2	udp	128	1	0	0	2	1
 client	192.168.1.20	2	1
 commit
 DATA
@@ -219,6 +220,41 @@ DATA
 	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":5,"blocked":2}'
 	ss_spec_assert_file_contains "$JSON" '"instance_id":"epoch-2"'
 	ss_spec_assert_file_contains "$JSON" '"queries":5,"blocked":2'
+
+	REBASELINE="$TMP/rebaseline"
+	: >"$REBASELINE"
+	cat >"$INPUT" <<'DATA'
+snapshot	epoch-2	udp	128	1	0	0	50	10
+client	192.168.1.20	50	10
+commit
+DATA
+	ss_statistics_awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v lease_file="$LEASES" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v force_rebaseline=1 \
+		-v rebaseline_file="$REBASELINE" \
+		-v fixed_now=1787950950 \
+		<"$INPUT"
+	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":5,"blocked":2}'
+	[ ! -e "$REBASELINE" ]
+
+	cat >"$INPUT" <<'DATA'
+snapshot	epoch-2	udp	128	1	0	0	53	11
+client	192.168.1.20	53	11
+commit
+DATA
+	ss_statistics_awk \
+		-v state_file="$STATE" \
+		-v json_file="$JSON" \
+		-v lease_file="$LEASES" \
+		-v snapshot_interval=60 \
+		-v retention_hours=168 \
+		-v fixed_now=1787950970 \
+		<"$INPUT"
+	ss_spec_assert_file_contains "$JSON" '"totals":{"queries":8,"blocked":3}'
 
 	printf '%s\n' 'error	dnsmasq_ubus_poll_failed' >"$INPUT"
 	ss_statistics_awk \
@@ -785,6 +821,10 @@ ss_case_statistics_modules() (
 	[ ! -e "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics.awk" ]
 	[ -x "$POLL_HELPER" ]
 	ss_spec_assert_file_contains "$POLL_HELPER" "ubus.call('dnsmasq', 'safeshield_stats', {})"
+	ss_spec_assert_file_contains "$POLL_HELPER" 'uint_or_null(data.schema) != 1'
+	ss_spec_assert_file_contains "$POLL_HELPER" "type(data.totals) != 'object'"
+	ss_spec_assert_file_contains "$POLL_HELPER" "type(data.clients) != 'array'"
+	ss_spec_assert_file_contains "$POLL_HELPER" 'untracked_blocked'
 	ss_spec_assert_file_not_contains "$POLL_HELPER" 'smartsafehub_stats'
 	ss_spec_assert_file_contains "$STATSD" 'SS_STATSD_POLL_COMMAND'
 	ss_spec_assert_file_contains "$SS_SPEC_ROOT/Makefile" '$(INSTALL_BIN) ./files/usr/libexec/safeshield-stats-poll $(1)/usr/libexec/safeshield-stats-poll'

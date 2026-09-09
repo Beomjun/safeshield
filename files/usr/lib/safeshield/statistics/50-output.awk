@@ -32,6 +32,7 @@ function save_json(now,    tmp, current_hour, first_hour, cutoff, bucket, comma,
 		json_escape(source_instance_id), json_escape(source_transport_scope) >> tmp
 	printf "\"client_capacity\":%d,\"tracked_clients\":%d,\"untracked_queries\":%d,", \
 		source_client_capacity, source_tracked_clients, source_untracked_queries >> tmp
+	printf "\"untracked_blocked\":%d,", source_untracked_blocked >> tmp
 	printf "\"poll_error_count\":%d,\"last_error_at\":%d},", \
 		source_error_count, source_last_error_at >> tmp
 	printf "\"started_at\":%d,\"session_started_at\":%d,\"updated_at\":%d,", started_at, session_started_at, now >> tmp

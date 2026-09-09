@@ -399,21 +399,32 @@ statistics_retention_hours=168
 ```
 
 When statistics are enabled, SafeShield calls `ubus call dnsmasq
-safeshield_stats` through a small ucode poll helper. No `log-queries` or
-`log-async` setting is required, and disabling statistics only stops the
-collector. Existing pre-0.3.20-r2 statistics logging configuration is removed
-once during upgrade. SafeShield persists aggregate counters only; raw DNS query
-names are never collected.
+safeshield_stats` through a small ucode poll helper. The helper accepts only
+schema version 1 snapshots with a valid `instance_id`, cumulative totals, and
+client array; malformed or incompatible replies are treated as poll failures
+instead of silently becoming zero counters. No `log-queries` or `log-async`
+setting is required. Existing pre-0.3.20-r2 statistics logging configuration is
+removed once during upgrade. SafeShield persists aggregate counters only; raw
+DNS query names are never collected.
+
+`statistics_enabled` is the configured user preference. Runtime availability is
+reported separately through `effective_enabled` and `collector_running`. If the
+SafeShield dnsmasq extension is unavailable, SafeShield keeps the configured
+preference intact, stops only the statistics runtime, and automatically resumes
+collection after a compatible dnsmasq becomes available. Disabling Statistics
+or SafeShield creates a rebaseline marker so the first snapshot after re-enable
+is used only as a new cumulative-counter baseline; traffic from the disabled
+period is not backfilled.
 
 When the SafeShield dnsmasq extension is available, SafeShield emits block rules
 as `safeshield-block=/domain/`. Only these SafeShield-owned rules increment the
 dnsmasq blocked counter. If the extension is unavailable, SafeShield defensively
-uses standard `address=/domain/#` rules so DNS protection remains available and
-disables `statistics_enabled` instead of installing an unsupported directive.
-The statistics source also exposes dnsmasq's `instance_id`, `transport_scope`,
-client-table capacity, tracked-client count, and untracked-query count. The
-OpenWrt 25.12 dnsmasq PoC currently reports `transport_scope=udp`; exact TCP
-accounting requires the corresponding dnsmasq parent-process accounting work.
+uses standard `address=/domain/#` rules so DNS protection remains available
+without installing an unsupported directive. The statistics source also exposes
+dnsmasq's `instance_id`, `transport_scope`, client-table capacity,
+tracked-client count, `untracked_queries`, and `untracked_blocked`. The OpenWrt
+25.12 dnsmasq PoC currently reports `transport_scope=udp`; exact TCP accounting
+requires the corresponding dnsmasq parent-process accounting work.
 
 Update writable configuration values. `enabled` and `license_key` are
 intentionally excluded and have dedicated methods:

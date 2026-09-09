@@ -89,7 +89,7 @@ EOF_CORE
 	cat >"$TMP/bin/stats-poll" <<'EOF_POLL'
 #!/bin/sh
 printf '%s\n' '1' >>"$POLL_COUNT_FILE"
-printf '%s\n' 'snapshot	runtime-instance	udp	128	1	0	10	2'
+printf '%s\n' 'snapshot	runtime-instance	udp	128	1	0	0	10	2'
 printf '%s\n' 'client	192.168.1.2	10	2'
 printf '%s\n' 'commit'
 EOF_POLL
@@ -131,12 +131,14 @@ EOF_IP
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'snapshot_interval=300'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'identity_cache_ttl=60'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'generation_seed=runtime-generation'
+	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'force_rebaseline=0'
+	ss_spec_assert_file_line "$AWK_ARGS_FILE" "rebaseline_file=$TMP/statistics/rebaseline"
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'ipv6_neigh_command=ip -6 neigh show 2>/dev/null'
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/20-identity.awk"
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" "$SS_SPEC_ROOT/files/usr/lib/safeshield/statistics/90-main.awk"
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'persistent_state_file='
 	ss_spec_assert_file_line "$AWK_ARGS_FILE" 'persistent_journal_file='
-	ss_spec_assert_file_line "$AWK_INPUT_FILE" 'snapshot	runtime-instance	udp	128	1	0	10	2'
+	ss_spec_assert_file_line "$AWK_INPUT_FILE" 'snapshot	runtime-instance	udp	128	1	0	0	10	2'
 	ss_spec_assert_file_line "$AWK_INPUT_FILE" 'client	192.168.1.2	10	2'
 	ss_spec_assert_eq "$(cat "$POLL_COUNT_FILE")" '1'
 	[ ! -e "$TMP/flash" ]
@@ -154,12 +156,14 @@ ss_case_statistics_reconcile() (
 	TMP="$(ss_spec_tmpdir)"
 	trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 	SS_DNSMASQ_DIR="$TMP/dnsmasq.d"
+	SS_STATISTICS_DIR="$TMP/statistics"
 	SS_STATISTICS_DNSMASQ_CONF="$SS_DNSMASQ_DIR/safeshield.statistics.conf"
 	SS_STATISTICS_POLL_COMMAND="$TMP/stats-poll"
+	SS_STATISTICS_REBASELINE_FILE="$SS_STATISTICS_DIR/rebaseline"
 	PKG_NAME='safeshield'
 	ss_enabled=1
 	ss_statistics_enabled=0
-	export SS_DNSMASQ_DIR SS_STATISTICS_DNSMASQ_CONF SS_STATISTICS_POLL_COMMAND PKG_NAME
+	export SS_DNSMASQ_DIR SS_STATISTICS_DIR SS_STATISTICS_DNSMASQ_CONF SS_STATISTICS_POLL_COMMAND SS_STATISTICS_REBASELINE_FILE PKG_NAME
 	export ss_enabled ss_statistics_enabled
 	cat >"$SS_STATISTICS_POLL_COMMAND" <<'EOF_POLL'
 #!/bin/sh
@@ -206,6 +210,7 @@ CONFIG
 	: >"$CALLS"
 	ss_statistics_reconcile_runtime
 	[ ! -e "$SS_STATISTICS_DNSMASQ_CONF" ]
+	[ -f "$SS_STATISTICS_REBASELINE_FILE" ]
 	ss_spec_assert_file_line "$CALLS" 'procd_kill safeshield statistics'
 	ss_spec_assert_file_line "$CALLS" 'dnsmasq_restart'
 	! grep -Fx 'procd_kill safeshield' "$CALLS" >/dev/null
@@ -231,8 +236,8 @@ CONFIG
 	: >"$CALLS"
 	ss_statistics_reconcile_runtime
 	ss_spec_assert_eq "$ss_statistics_enabled" '0'
-	ss_spec_assert_file_line "$CALLS" 'uci -q set safeshield.config.statistics_enabled=0'
-	ss_spec_assert_file_line "$CALLS" 'uci -q commit safeshield'
+	[ -f "$SS_STATISTICS_REBASELINE_FILE" ]
+	! grep -F 'uci ' "$CALLS" >/dev/null
 	ss_spec_assert_file_line "$CALLS" 'procd_kill safeshield statistics'
 	! grep -F 'procd_open_instance statistics' "$CALLS" >/dev/null
 

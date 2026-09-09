@@ -93,6 +93,7 @@ function load_state_file(path,    line, fields, count, bucket, key, mac, ip, hos
 			source_available = (count >= 9 && numeric(fields[9], 0)) ? 1 : 0
 			source_error_count = (count >= 10) ? numeric(fields[10], 0) : 0
 			source_last_error_at = (count >= 11) ? numeric(fields[11], 0) : 0
+			source_untracked_blocked = (count >= 12) ? numeric(fields[12], 0) : 0
 			source_initialized = (source_instance_id != "") ? 1 : 0
 		}
 		else if (count >= 4 && fields[1] == "source_client") {

@@ -63,7 +63,7 @@ function apply_source_snapshot(    now, bucket, had_source, same_epoch, query_de
 
 	now = current_time()
 	bucket = hour_start(now)
-	had_source = source_initialized
+	had_source = source_initialized && !force_rebaseline
 	same_epoch = had_source && poll_instance_id == source_instance_id
 
 	if (!had_source) {
@@ -123,6 +123,7 @@ function apply_source_snapshot(    now, bucket, had_source, same_epoch, query_de
 	source_client_capacity = poll_client_capacity
 	source_tracked_clients = poll_tracked_clients
 	source_untracked_queries = poll_untracked_queries
+	source_untracked_blocked = poll_untracked_blocked
 	source_total_queries = poll_total_queries
 	source_total_blocked = poll_total_blocked
 	replace_source_clients()
@@ -131,7 +132,12 @@ function apply_source_snapshot(    now, bucket, had_source, same_epoch, query_de
 	clear_poll_clients()
 	snapshot_dirty = 1
 	event_index++
-	save_snapshot(now, 0, 0)
+	if (save_snapshot(now, 0, 0) && force_rebaseline) {
+		if (rebaseline_file != "") {
+			system("rm -f " shell_quote(rebaseline_file))
+		}
+		force_rebaseline = 0
+	}
 }
 
 function record_source_error(    now) {
@@ -164,6 +170,8 @@ BEGIN {
 	fixed_now = numeric(fixed_now, 0)
 	fixed_step = numeric(fixed_step, 0)
 	generation_seed = normalize_state_field(generation_seed)
+	force_rebaseline = numeric(force_rebaseline, 0) ? 1 : 0
+	rebaseline_file = (rebaseline_file != "") ? rebaseline_file : ""
 	if (generation_seed == "*") {
 		generation_seed = ""
 	}
@@ -189,6 +197,7 @@ BEGIN {
 	source_client_capacity = 0
 	source_tracked_clients = 0
 	source_untracked_queries = 0
+	source_untracked_blocked = 0
 	source_total_queries = 0
 	source_total_blocked = 0
 	source_error_count = 0
@@ -295,7 +304,7 @@ BEGIN {
 	save_snapshot(current_time(), 0, 1)
 }
 
-$1 == "snapshot" && NF >= 8 {
+$1 == "snapshot" && NF >= 9 {
 	clear_poll_clients()
 	poll_active = 1
 	poll_instance_id = $2
@@ -303,8 +312,9 @@ $1 == "snapshot" && NF >= 8 {
 	poll_client_capacity = numeric($4, 0)
 	poll_tracked_clients = numeric($5, 0)
 	poll_untracked_queries = numeric($6, 0)
-	poll_total_queries = numeric($7, 0)
-	poll_total_blocked = numeric($8, 0)
+	poll_untracked_blocked = numeric($7, 0)
+	poll_total_queries = numeric($8, 0)
+	poll_total_blocked = numeric($9, 0)
 	next
 }
 

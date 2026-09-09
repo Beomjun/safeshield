@@ -16,7 +16,7 @@ IPKG_INSTROOT="${IPKG_INSTROOT:-}"
 export IPKG_INSTROOT
 
 readonly PKG_NAME='safeshield'
-readonly PKG_VERSION='0.3.20-r3'
+readonly PKG_VERSION='0.3.20-r4'
 
 if type extra_command >/dev/null 2>&1; then
 	extra_command 'apply_local_rules' 'Apply local allow/block rules using the cached Hub artifact'
@@ -63,6 +63,10 @@ start_service() {
 
 	if [ "${ss_enabled}" != "1" ]; then
 		log_warn "${PKG_NAME} is disabled"
+		ss_statistics_request_rebaseline || {
+			log_error "Failed to mark statistics for rebaseline while SafeShield is disabled"
+			return 1
+		}
 		statistics_dnsmasq_changed="$(ss_statistics_configure_dnsmasq 0)" || {
 			log_error "Failed to remove legacy dnsmasq statistics logging"
 			return 1
@@ -98,6 +102,13 @@ start_service() {
 		log_error "Failed to apply the dnsmasq compatibility guard for statistics"
 		return 1
 	}
+
+	if [ "${ss_statistics_enabled}" != "1" ]; then
+		ss_statistics_request_rebaseline || {
+			log_error "Failed to mark statistics for rebaseline while statistics are inactive"
+			return 1
+		}
+	fi
 
 	ss_reconcile_installed_blocklists_for_dnsmasq || {
 		log_error "Failed to reconcile installed blocklist directives for dnsmasq"

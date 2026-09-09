@@ -78,6 +78,7 @@ function sanitize_source(item) {
         client_capacity: to_int(item.client_capacity, 0),
         tracked_clients: to_int(item.tracked_clients, 0),
         untracked_queries: to_int(item.untracked_queries, 0),
+        untracked_blocked: to_int(item.untracked_blocked, 0),
         poll_error_count: to_int(item.poll_error_count, 0),
         last_error_at: to_int(item.last_error_at, 0)
     };
@@ -90,14 +91,21 @@ function build_statistics() {
     let snapshot_interval_s = to_int(cfg('statistics_snapshot_interval_s', '60'), 60);
     let data = read_json_file(STATISTICS_FILE, {});
     let totals = (type(data.totals) == 'object') ? data.totals : {};
+    let collector_running = service_instance_running(PKG_NAME, 'statistics');
+    let effective_enabled = enabled && collector_running;
+    let source = sanitize_source(data.source);
+    if (!effective_enabled) {
+        source.available = false;
+    }
     return {
         schema: {
             name: STATISTICS_SCHEMA_NAME,
             version: STATISTICS_SCHEMA_VERSION
         },
         enabled: enabled,
+        effective_enabled: effective_enabled,
         available: !!data.schema,
-        collector_running: service_instance_running(PKG_NAME, 'statistics'),
+        collector_running: collector_running,
         volatile: to_bool(data.volatile, true),
         storage: sprintf('%s', data.storage || 'tmpfs'),
         persistent: to_bool(data.persistent, false),
@@ -114,7 +122,7 @@ function build_statistics() {
         effective_snapshot_interval_s: to_int(data.snapshot_interval_s, snapshot_interval_s),
         retention_hours: retention_hours,
         generation_id: sprintf('%s', data.generation_id || ''),
-        source: sanitize_source(data.source),
+        source: source,
         started_at: to_int(data.started_at, 0),
         session_started_at: to_int(data.session_started_at, 0),
         updated_at: to_int(data.updated_at, 0),

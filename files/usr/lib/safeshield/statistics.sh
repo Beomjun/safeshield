@@ -4,6 +4,7 @@
 # shellcheck disable=SC2154
 
 SS_STATISTICS_POLL_COMMAND="${SS_STATISTICS_POLL_COMMAND:-/usr/libexec/safeshield-stats-poll}"
+SS_STATISTICS_REBASELINE_FILE="${SS_STATISTICS_REBASELINE_FILE:-${SS_STATISTICS_DIR:-/tmp/safeshield/statistics}/rebaseline}"
 
 ss_statistics_profile_code() {
 	local board=""
@@ -66,26 +67,22 @@ ss_statistics_source_available() {
 	"$SS_STATISTICS_POLL_COMMAND" >/dev/null 2>&1
 }
 
+ss_statistics_request_rebaseline() {
+	mkdir -p "${SS_STATISTICS_REBASELINE_FILE%/*}" || return 1
+	: >"${SS_STATISTICS_REBASELINE_FILE}" || return 1
+}
+
 ss_statistics_disable_if_dnsmasq_unpatched() {
 	[ "${ss_enabled}" = "1" ] || return 0
 	[ "${ss_statistics_enabled}" = "1" ] || return 0
 	ss_dnsmasq_safeshield_block_supported && return 0
 
-	log_warn 'Disabling SafeShield statistics because dnsmasq does not provide the SafeShield extension'
+	log_warn 'Disabling SafeShield statistics at runtime because dnsmasq does not provide the SafeShield extension'
 	ss_status_set health_dnsmasq_features '0'
 	ss_status_add_warning 'statistics_disabled_dnsmasq_safeshield_patch_unavailable'
 
-	# Persist the defensive disable when UCI is available so LuCI does not keep
-	# presenting statistics as enabled on a router that cannot provide counters.
-	if command -v uci >/dev/null 2>&1; then
-		if uci -q set "${PKG_NAME}.config.statistics_enabled=0" && uci -q commit "${PKG_NAME}"; then
-			log_warn 'SafeShield statistics configuration was disabled'
-		else
-			uci -q revert "${PKG_NAME}.config.statistics_enabled" >/dev/null 2>&1 || true
-			log_warn 'Failed to persist the SafeShield statistics disable; disabling it for this runtime'
-		fi
-	fi
-
+	# Keep the configured preference intact. A later firmware upgrade that adds
+	# the dnsmasq extension can therefore restore statistics automatically.
 	ss_statistics_enabled='0'
 	return 0
 }
@@ -115,6 +112,10 @@ ss_statistics_reconcile_runtime() {
 
 	if [ "${ss_enabled}" != "1" ] || [ "${ss_statistics_enabled}" != "1" ]; then
 		procd_kill "${PKG_NAME}" statistics >/dev/null 2>&1 || true
+		ss_statistics_request_rebaseline || {
+			log_error "Failed to mark statistics for rebaseline while statistics are inactive"
+			return 1
+		}
 
 		legacy_dnsmasq_changed="$(ss_statistics_cleanup_legacy_dnsmasq_logging)" || {
 			log_error "Failed to remove legacy dnsmasq statistics logging"

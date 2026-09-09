@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.20-r4] - 2026-09-09
+
+### Changed
+
+- Keep `statistics_enabled` as the configured user preference when the dnsmasq SafeShield extension is unavailable; disable collection only for the current runtime so a later compatible firmware can restore it automatically.
+- Expose `effective_enabled` separately from the configured Statistics toggle and report the source unavailable while the collector is not running.
+- Propagate dnsmasq `untracked_blocked` metadata through collector state, JSON output, and the statistics RPC.
+
+### Fixed
+
+- Strictly validate dnsmasq `safeshield_stats` schema 1, required totals, client arrays, and non-negative cumulative counters before accepting a poll snapshot.
+- Establish a fresh cumulative-counter baseline after Statistics or SafeShield has been disabled, preventing queries from the disabled period from being backfilled when collection is re-enabled.
+
 ## [0.3.20-r3] - 2026-09-09
 
 ### Changed

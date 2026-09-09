@@ -12,3 +12,8 @@
 .vscode/
 .idea/
 .vs/
+
+# etc
+*.orig
+*.rej
+/*.patch

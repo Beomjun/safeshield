@@ -20,6 +20,7 @@ let data = {
         client_capacity: '128',
         tracked_clients: '2',
         untracked_queries: '3',
+        untracked_blocked: '2',
         poll_error_count: '4',
         last_error_at: '199'
     },

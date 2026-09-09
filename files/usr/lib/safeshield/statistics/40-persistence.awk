@@ -13,12 +13,12 @@ function save_state_file(path, now,    tmp, bucket, cutoff, key, composite, part
 		persistent_error_count, persistent_last_error_at, persistent_compacted_at, \
 		last_journal_completed_bucket, normalize_state_field(generation_id) > tmp
 	if (source_initialized || source_error_count > 0) {
-		printf "source\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", \
+		printf "source\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", \
 			normalize_state_field(source_instance_id), \
 			normalize_state_field(source_transport_scope), \
 			source_client_capacity, source_tracked_clients, source_untracked_queries, \
 			source_total_queries, source_total_blocked, source_available, \
-			source_error_count, source_last_error_at >> tmp
+			source_error_count, source_last_error_at, source_untracked_blocked >> tmp
 	}
 	if (source_initialized) {
 		for (key in source_client_queries) {

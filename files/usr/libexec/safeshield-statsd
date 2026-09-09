@@ -133,7 +133,11 @@ stats_run_collector() {
 	local lease_file="$3"
 	local persistent_state_file="$4"
 	local persistent_journal_file="$5"
-	local generation_id ipv6_neigh_command='' rc=0
+	local generation_id ipv6_neigh_command='' force_rebaseline=0 rc=0
+
+	if [ -f "${SS_STATISTICS_REBASELINE_FILE}" ]; then
+		force_rebaseline=1
+	fi
 
 	# This is only a candidate for a brand-new dataset. The collector modules keep
 	# the generation restored from tmpfs or persistent state when one already exists.
@@ -167,6 +171,8 @@ stats_run_collector() {
 		-v identity_cache_ttl=60 \
 		-v max_devices=128 \
 		-v generation_seed="${generation_id}" \
+		-v force_rebaseline="${force_rebaseline}" \
+		-v rebaseline_file="${SS_STATISTICS_REBASELINE_FILE}" \
 		-f "$SS_STATSD_AWK_DIR/00-common.awk" \
 		-f "$SS_STATSD_AWK_DIR/10-recovery.awk" \
 		-f "$SS_STATSD_AWK_DIR/20-identity.awk" \
